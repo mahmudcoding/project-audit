@@ -1,195 +1,242 @@
-# Project Manager Guide
+# 15. Project Manager Guide
 
-## Plain-English Summary
+## What is this guide?
 
-Aloqa is a multi-platform collaboration product. It is similar in category to Slack plus calls/files/search/admin controls.
+This is the practical guide for managing Aloqa work.
 
-It has:
+It is not a code manual.
 
-- a backend made of multiple Go services
-- a web app with a security-focused BFF
-- a desktop app
-- a mobile app
-- realtime chat and meeting events
-- LiveKit-based video/audio calls
-- PostgreSQL, Redis, Kafka, MinIO, OpenSearch, and other infrastructure
+It helps you ask better questions, understand estimates, and see why some requests are small while others are expensive.
 
-This is a complex product. The main management risk is not whether there is code. There is a lot of code. The risk is making sure releases are safe across many services and platforms.
+## The one-sentence product summary
 
-## Major Product Areas
+Aloqa is a multi-platform workplace communication product with chat, files, meetings, search, notifications, roles, and permissions.
 
-### Account and Security
+Quick terms used in this guide:
 
-Includes login, sessions, password reset, email verification, 2FA, Google login, magic links, profile, settings, and privacy.
+- API Gateway means the backend reception desk.
+- BFF means Backend for Frontend, the web app's helper server layer.
+- Outbox means a database tray of events to send later.
+- Kafka means internal event delivery.
+- WebSocket means a live connection that stays open.
+- LiveKit means the audio/video meeting system.
 
-Engineering owners likely touch:
+## The one-minute architecture summary
 
-- backend auth service
-- API gateway
-- web BFF
-- platform-specific clients
+```text
+Users
+  -> web, desktop, or mobile app
+  -> API Gateway or BFF
+  -> backend service department
+  -> database or infrastructure
+  -> realtime update if needed
+```
 
-### Organization Model
+## How to think about feature work
 
-Includes companies, workspaces, channels, invites, members, roles, permissions, and admin flows.
+Every feature should be discussed in layers.
 
-This is the backbone of access control.
+```text
+User action
+  -> screen
+  -> API
+  -> backend service
+  -> database
+  -> realtime event
+  -> other platforms
+```
 
-### Messaging
+If a request only changes one screen, it may be small.
 
-Includes channel chat, direct messages, threads, reactions, pins, edits, deletes, read state, and blocking.
+If it changes backend rules, permissions, database, and realtime, it is not small.
 
-This is one of the core daily-use features.
+## Feature readiness checklist
 
-### Files
+Use this table before calling a feature done.
 
-Includes upload, storage, shares, download/content access, quotas, thumbnails/processing, and scan behavior.
-
-This area has security and storage-cost implications.
-
-### Meetings and Calls
-
-Includes meeting lifecycle, LiveKit join, waiting room, meeting chat, admins, room settings, device requests, moderation, breakout rooms, and participant state.
-
-This is the most complex single feature area.
-
-### Search
-
-Includes full-text search and admin reindex.
-
-Search is likely eventually consistent because it depends on OpenSearch and background indexing.
-
-### Notifications
-
-Includes email and in-app/web notifications, read state, and channel mute behavior.
-
-Notifications cross product boundaries because many features generate them.
-
-## How To Think About Readiness
-
-For each feature, track readiness across these columns:
-
-| Area | Meaning |
+| Question | Why it matters |
 |---|---|
-| Backend contract | OpenAPI/gRPC route exists |
-| Backend implementation | service logic exists and persists correctly |
-| Web UI | browser feature works |
-| Desktop UI | desktop feature works |
-| Mobile UI | mobile feature works |
-| Realtime | live updates work where expected |
-| Permissions | unauthorized users are blocked |
-| Tests | automated tests cover happy path and key failures |
-| Smoke | production-like smoke test exists |
-| Observability | failures can be detected |
+| Does the API exist? | frontend cannot finish without backend door |
+| Does backend logic exist? | API path alone is not enough |
+| Does web UI exist? | browser users need it |
+| Does desktop UI exist? | desktop parity may be required |
+| Does mobile UI exist? | mobile users may expect it |
+| Are permissions correct? | prevents data leaks |
+| Does realtime update? | chat and meetings depend on it |
+| Is it searchable? | users may need to find it later |
+| Are notifications needed? | users may need alerts |
+| Are tests present? | reduces release risk |
+| Is there a smoke test? | proves production path works |
 
-Do not mark a feature "done" just because one route or one screen exists.
+## Questions to ask engineers
 
-## Highest Release Risks
+For any feature:
 
-### Edge Routing
+```text
+Which user action starts this?
+Which screens change?
+Which API endpoint is used?
+Which backend service owns it?
+Which tables change?
+Does it need realtime?
+Does it need notifications?
+Does it need search indexing?
+Does it affect permissions?
+Does it affect all platforms?
+What test proves it works?
+```
 
-The web app expects browser API traffic to go through the web BFF. One backend nginx file routes `/api/v1/` directly to the backend gateway, while the frontend nginx routes `/api/*` to the web app. This must be resolved before relying on web auth/security behavior.
+## How to estimate feature cost
 
-### Backend Coverage
+Low cost:
 
-Backend test coverage appears thin compared with the number of services and workflows.
+- text change
+- small UI-only change
+- display existing data differently
 
-### Realtime Reliability
+Medium cost:
 
-Chat and meetings use asynchronous events through outbox tables, Kafka, Redis, WebSocket gateway, and frontend clients. These flows can fail partially.
+- new API field
+- new frontend form
+- small backend rule
+- one-platform feature
 
-### Meeting Complexity
+High cost:
 
-Meetings include LiveKit plus many product rules. Bugs here are likely to be user-visible and hard to diagnose.
+- auth/session change
+- permission change
+- database migration
+- realtime event change
+- file upload/access change
+- meeting behavior change
+- multi-platform feature
 
-### File Security
+## Product areas and likely owners
 
-Uploads, shares, scans, and downloads need strong tests.
+| Product area | Likely backend owner | Likely frontend owner |
+|---|---|---|
+| Login/security | auth-service | auth screens and web BFF |
+| Workspaces/channels | org-service | workspace and settings UI |
+| Chat/DMs | messaging-service | chat screens |
+| Files | file-service | files UI and upload routes |
+| Meetings | realtime-service | calls UI |
+| Notifications | notification-service | notification UI and realtime bridges |
+| Search | search-service | search UI |
+| Live updates | ws-gateway | realtime client |
 
-## Questions PMs Should Ask Before Shipping a Feature
+## How to handle bug reports
 
-- Which platforms support this feature: web, desktop, mobile?
-- Does the backend route exist in OpenAPI?
-- Does the service implementation exist?
-- Is there a permission check?
-- Does the feature generate realtime events?
-- Does the frontend listen for those events?
-- What happens after reconnect?
-- What happens if the request is retried?
-- What happens if the user loses permission mid-flow?
-- What is the failure message shown to the user?
-- Is there an automated test?
-- Is there a production smoke check?
-- Is there a dashboard or alert if this fails?
+Start with the user action.
 
-## Suggested Milestones
+Example: "Message sent but teammate did not see it."
 
-### Milestone 1: Release Safety Baseline
+Ask:
 
-Goals:
+```text
+Did the message save?
+Did sender get success?
+Did database store it?
+Did outbox event create?
+Did Kafka deliver?
+Did WebSocket Gateway receive?
+Did teammate socket stay connected?
+Did frontend event handler update UI?
+```
 
-- decide production edge routing
-- add contract drift checks
-- add backend migration check
-- add smoke test for web BFF, gateway, WebSocket, and LiveKit routing
+This prevents blaming the wrong team too early.
 
-### Milestone 2: Core Collaboration Confidence
+## How to handle requests for "simple" changes
 
-Goals:
+Some requests sound simple but are not.
 
-- integration tests for auth, workspace/channel, messaging, file upload
-- WebSocket message fanout test
-- file permission tests
-- role/permission matrix tests
+Example:
 
-### Milestone 3: Meeting Hardening
+"Add a setting so only admins can speak in a meeting."
 
-Goals:
+This may require:
 
-- meeting join/waiting/admit tests
-- LiveKit token tests
-- meeting admin permission tests
-- device request tests
-- breakout room tests
-- meeting realtime event tests
+```text
+new setting in database
+new backend permission rule
+new meeting API field
+new WebSocket event
+new web UI
+new desktop UI
+new mobile UI
+LiveKit behavior check
+tests
+```
 
-### Milestone 4: Platform Parity
+So the PM question is not "is the setting simple?"
 
-Goals:
+The PM question is:
 
-- feature readiness matrix for web/desktop/mobile
-- mobile-specific auth/reconnect tests
-- desktop-specific call/deep-link tests
-- shared core conformance tests
+```text
+Which layers does it touch?
+```
 
-### Milestone 5: Operational Readiness
+## Release risk areas
 
-Goals:
+Highest risk:
 
-- outbox/Kafka dashboards
-- WebSocket connection metrics
-- LiveKit join metrics
-- file scan metrics
-- search indexing lag metrics
-- incident runbooks
+- login/session changes
+- permissions
+- file access
+- meeting behavior
+- realtime event changes
+- production routing
+- database migrations
 
-## What Is Strong Already
+Medium risk:
 
-- The backend has clear service boundaries.
-- The frontend has clear architecture decisions.
-- The API surface is documented in OpenAPI/protobuf.
-- The database schema covers the real product domain.
-- There are production deployment artifacts and CI/CD docs.
+- new API fields
+- new notification behavior
+- search behavior
+- admin screens
 
-## What Needs Management Attention
+Lower risk:
 
-- Prevent shipping features without backend tests.
-- Prevent platform parity assumptions without checking all apps.
-- Keep architecture docs current.
-- Make one team or owner accountable for production edge routing.
-- Treat meetings and files as high-risk product areas.
-- Track contract drift as a release blocker.
+- copy changes
+- purely visual changes
+- UI layout changes that do not affect data
 
-## PM Assessment
+## Suggested roadmap hygiene
 
-Aloqa should be managed as a real multi-platform SaaS product, not as a simple web app. The codebase has enough architecture to support that, but the release process needs stronger gates before the product surface grows further.
+For each epic, keep a small matrix:
+
+```text
+Feature:
+User journey:
+Backend service:
+API endpoint:
+Database tables:
+Frontend apps:
+Realtime needed:
+Search needed:
+Notifications needed:
+Tests:
+Smoke test:
+Known risks:
+```
+
+## What to ask before release
+
+- Did we test the production entry path?
+- Did web BFF routing work?
+- Did login and refresh work?
+- Did WebSocket connect?
+- Did file upload work?
+- Did meeting join work?
+- Did migrations run?
+- Did smoke tests pass?
+- Are rollback steps known?
+
+## What you should remember
+
+- Always start from the user action.
+- Then trace screen, API, backend, database, realtime.
+- "Simple" features can be expensive if they touch permissions, meetings, files, or realtime.
+- Web, desktop, and mobile may all need work.
+- Backend route existence does not prove frontend readiness.
+- Frontend screen existence does not prove backend readiness.
+- Good PM questions reduce surprise.

@@ -1,303 +1,357 @@
-# Database and Persistence Audit
+# 05. Database and Stored Data
 
-## Persistence Overview
+## What is the database?
 
-Aloqa uses multiple persistence and state systems:
+The database is where Aloqa stores long-term truth.
 
-- PostgreSQL: source of truth for users, sessions, companies, workspaces, channels, messages, files, meetings, notifications, permissions, and outbox rows.
-- Redis: cache, session-adjacent state, presence, room state, pub/sub, typing, notification fanout, and ephemeral realtime state.
-- MinIO: object storage for uploaded files.
-- OpenSearch: search index for messages, files, users, or other searchable entities.
-- Kafka: durable event transport between services.
-- LiveKit: media/session system for calls, with Aloqa storing domain state separately.
+Real-life analogy:
 
-Source paths:
+The database is the company's warehouse and filing cabinet.
 
-- `aloqa-backend/platform/migrations/`
-- `aloqa-backend/deploy/compose/core/docker-compose.yml`
-- `aloqa-backend/deploy/prod/docker-compose.yml`
-- `aloqa-backend/realtime-service/`
-- `aloqa-backend/file-service/`
-- `aloqa-backend/search-service/`
+It stores records such as:
 
-## PostgreSQL Schema Scope
+- users
+- sessions
+- companies
+- workspaces
+- channels
+- messages
+- files
+- roles
+- permissions
+- meetings
+- notifications
 
-The database schema is defined by timestamped migrations in `aloqa-backend/platform/migrations/`.
+## Why does it exist?
 
-The schema covers:
+If a server restarts, a user still expects:
 
-- account identity and sessions
-- company/workspace/channel membership
-- custom roles and ABAC permissions
-- workspace invites and invite links
-- direct message channels and user blocks
-- messages, threads, reactions, pins, read cursors, idempotency keys
-- files, file shares, quotas, thumbnails, and processing state
-- user settings and privacy
-- notifications and channel mutes
-- meetings, meeting participants, admins, room settings, device modes, permission requests
-- meeting chat, meeting threads, meeting reactions, recipient targeting, file attachments
-- breakout rooms, breakout participants, breakout chat, breakout waiting and join requests
-- waiting room and participant status
-- moderation state such as meeting bans
-- outbox tables for messaging, channel, and meeting events
+- their account to exist
+- messages to remain
+- uploaded files to still be listed
+- workspace membership to remain correct
+- meeting history and settings to be remembered
 
-This is a mature schema for a collaboration product, not a toy model.
+That is why Aloqa needs a durable database.
 
-## Core Identity and Organization Tables
+## The main storage systems
 
-The initial migration creates core tables and enums:
-
-- `users`
-- `sessions`
-- `companies`
-- `company_members`
-- `workspaces`
-- `workspace_members`
-- `channels`
-- `channel_members`
-- `messages`
-- `reactions`
-- `workspace_invites`
-- `workspace_type`
-- `channel_type`
-- `invitation_status`
-
-Source path: `aloqa-backend/platform/migrations/20260504074928_init.*`.
-
-These tables establish the main hierarchy:
+Aloqa does not use only one storage tool.
 
 ```text
-company
-  -> company_members
-  -> workspace
-       -> workspace_members
-       -> channel
-            -> channel_members
-            -> messages
+PostgreSQL  -> long-term business records
+Redis       -> short-term memory
+MinIO       -> actual uploaded file contents
+OpenSearch  -> search index
+Kafka       -> event delivery log
+LiveKit     -> live media rooms
 ```
 
-Direct-message support later extends the channel model with `dm_channels` and a `dm` channel type.
+## What is PostgreSQL?
 
-## Roles and Permissions
+PostgreSQL is the main relational database.
 
-Role and permission support evolves through multiple migrations:
+Plain English:
 
-- initial custom roles: `custom_roles`, `role_permissions`, `user_roles`
-- `action_scope` enum
-- later `custom_roles_v2` style permission strings and model/resource indexes
-- guest role support through `is_guest`
-- invite links with role and role IDs
+It stores structured records in tables, like a very powerful spreadsheet system with rules.
 
-Source paths:
+Why Aloqa needs it:
 
-- `aloqa-backend/platform/migrations/20260520061940_add_abac_roles.*`
-- `aloqa-backend/platform/migrations/20260604000001_custom_roles_v2.*`
-- `aloqa-backend/platform/migrations/20260616000001_role_is_guest.*`
+Most business data must be stored carefully and queried later.
 
-This shows the authorization model moved from a simpler action/scope representation toward a more flexible permission-string model.
+Where it is defined:
 
-## Messaging Model
+```text
+aloqa-backend/platform/migrations/
+```
 
-Messaging tables evolve to support:
+## What is a migration?
 
-- JSONB message body
-- body text extraction
-- mentions
-- replies and threads
+A migration is a step-by-step database change.
+
+Analogy:
+
+If the database is a warehouse, a migration is a signed instruction like:
+
+```text
+Add a new shelf for file shares.
+Add a new label to meeting participants.
+Create a new cabinet for breakout rooms.
+```
+
+Why Aloqa needs migrations:
+
+As the product grows, the database needs new tables and columns. Migrations keep those changes ordered.
+
+Where they are stored:
+
+```text
+aloqa-backend/platform/migrations/
+```
+
+## User journey: login and sessions
+
+```text
+User logs in
+  -> Auth Service checks users table
+  -> Auth Service creates session
+  -> session is stored
+  -> future requests prove the user is logged in
+```
+
+Data involved:
+
+- users
+- sessions
+
+Why PMs should care:
+
+If these tables change, login can break for every user.
+
+## User journey: workspace and channels
+
+```text
+Admin creates company
+  -> company record is stored
+
+Admin creates workspace
+  -> workspace record is stored
+
+Admin creates channel
+  -> channel record is stored
+  -> channel membership records are stored
+```
+
+Data involved:
+
+- companies
+- company_members
+- workspaces
+- workspace_members
+- channels
+- channel_members
+
+Business reason:
+
+Aloqa needs to know who belongs where and who can see what.
+
+## User journey: message
+
+```text
+User sends message
+  -> message row is stored
+  -> optional reactions, replies, pins, mentions are stored
+  -> read cursor tracks what users have read
+```
+
+Data involved:
+
+- messages
 - reactions
+- channel_members read state
+- message mentions
+- threads/replies
 - pins
-- read cursors and message sequence
-- channel member mute state
-- forwarded messages
-- idempotency keys
-- direct-message blocks and clears
-- outbox events
 
-Source paths:
+Why PMs should care:
 
-- `aloqa-backend/platform/migrations/20260522130000_messages_body_jsonb.*`
-- `aloqa-backend/platform/migrations/20260525000000_message_reactions.*`
-- `aloqa-backend/platform/migrations/20260525000001_message_pinned.*`
-- `aloqa-backend/platform/migrations/20260526000001_message_read_cursor.*`
-- `aloqa-backend/platform/migrations/20260603000001_message_reply_to.*`
-- `aloqa-backend/platform/migrations/20260603000002_message_idempotency_key.*`
-- `aloqa-backend/platform/migrations/20260610000001_messaging_outbox.*`
-- `aloqa-backend/platform/migrations/20260617000001_dm_chat_logic.*`
-- `aloqa-backend/platform/migrations/20260617000002_dm_chat_clears.*`
-- `aloqa-backend/platform/migrations/20260619102244_messages_body_text.*`
+Changing message behavior can affect search, notifications, unread counts, and realtime updates.
 
-The presence of idempotency keys and outbox tables indicates the backend is designed to handle retries and asynchronous event publication.
+## User journey: file upload
 
-## File Model
+```text
+User uploads file
+  -> MinIO stores the file bytes
+  -> PostgreSQL stores file metadata
+  -> database stores who can access it
+  -> quotas may be updated
+```
 
-File persistence includes:
+Data involved:
 
-- file records
-- file IDs attached to messages
-- file shares
-- workspace storage settings
+- files
+- file_shares
+- workspace_storage_settings
 - user quotas
-- thumbnail and processing fields
-- cascade behavior for shares
-- meeting file-share type support
+- message file IDs
+- meeting chat file IDs
 
-Source paths:
+Important distinction:
 
-- `aloqa-backend/platform/migrations/20260608000003_files.*`
-- `aloqa-backend/platform/migrations/20260609000001_message_file_ids.*`
-- `aloqa-backend/platform/migrations/20260609000002_file_shares.*`
-- `aloqa-backend/platform/migrations/20260610000002_workspace_storage_settings.*`
-- `aloqa-backend/platform/migrations/20260626000001_meeting_chat_file_ids.*`
-- `aloqa-backend/platform/migrations/20260626000002_file_shares_meeting_type.*`
-- `aloqa-backend/platform/migrations/20260627000001_files_user_quota.*`
+The database usually does not store the full file contents. It stores the record that describes the file. The actual file lives in MinIO.
 
-Uploaded bytes live in MinIO, while Postgres stores metadata, access, sharing, and quota state.
+## User journey: meeting
 
-## Meeting Model
+```text
+User creates meeting
+  -> meeting record is stored
 
-Meeting persistence is the most complex database area.
+User joins
+  -> participant record is stored
 
-It includes:
+Host changes settings
+  -> room settings are stored
 
-- `meetings`
-- `meeting_participants`
-- meeting settings
-- join requests
-- optional channel association
-- meeting chat messages
-- meeting chat threads and mentions
-- meeting chat reactions
-- meeting admins and admin permissions
-- room settings
-- participant permissions
-- permission requests
-- device requests
-- pin state
-- meeting outbox
-- meeting bans
-- waiting room participant statuses
-- breakout rooms
-- breakout room participants
-- breakout-room visibility/allowed participants
-- breakout-room chat
-- breakout join requests
-- breakout waiting
+Host creates breakout room
+  -> breakout room records are stored
+```
 
-Source paths:
+Data involved:
 
-- `aloqa-backend/platform/migrations/20260522150000_add_video_meetings.*`
-- `aloqa-backend/platform/migrations/20260618101959_meeting_settings.*`
-- `aloqa-backend/platform/migrations/20260618113454_meeting_join_requests.*`
-- `aloqa-backend/platform/migrations/20260619085238_meeting_chat_messages.*`
-- `aloqa-backend/platform/migrations/20260619120000_meeting_chat_threads.*`
-- `aloqa-backend/platform/migrations/20260622072718_meeting_admins.*`
-- `aloqa-backend/platform/migrations/20260622072719_meeting_admin_permissions.*`
-- `aloqa-backend/platform/migrations/20260622072736_meeting_room_settings.*`
-- `aloqa-backend/platform/migrations/20260622074215_meeting_participant_permissions.*`
-- `aloqa-backend/platform/migrations/20260622075916_meeting_permission_requests.*`
-- `aloqa-backend/platform/migrations/20260622080000_breakout_rooms.*`
-- `aloqa-backend/platform/migrations/20260622081959_meeting_device_requests.*`
-- `aloqa-backend/platform/migrations/20260622082932_meeting_pin.*`
-- `aloqa-backend/platform/migrations/20260622085254_meeting_outbox.*`
-- `aloqa-backend/platform/migrations/20260624051928_meeting_bans.*`
-- `aloqa-backend/platform/migrations/20260624100000_breakout_room_chat.*`
-- `aloqa-backend/platform/migrations/20260624110000_waiting_room.*`
-- `aloqa-backend/platform/migrations/20260625120000_breakout_join_requests.*`
+- meetings
+- meeting_participants
+- meeting_settings
+- meeting_admins
+- meeting_room_settings
+- meeting_permission_requests
+- meeting_device_requests
+- meeting_chat_messages
+- breakout_rooms
+- breakout_room_participants
+- breakout_room_chat
 
-This database area requires careful integration tests because meeting behavior is state-machine-heavy.
+Why PMs should care:
 
-## Outbox Tables
+Meeting data is one of the most complex parts of the product. Small meeting changes can touch many tables.
 
-The migrations include outbox tables for asynchronous events:
+## What is Redis?
 
-- `messaging_outbox`
-- `channels_outbox`
-- `meeting_outbox`
+Redis is fast short-term memory.
 
-Source paths:
+Analogy:
 
-- `aloqa-backend/platform/migrations/20260610000001_messaging_outbox.*`
-- `aloqa-backend/platform/migrations/20260612000001_channels_outbox.*`
-- `aloqa-backend/platform/migrations/20260622085254_meeting_outbox.*`
+PostgreSQL is the permanent filing cabinet. Redis is the sticky note on someone's desk.
 
-The outbox pattern is a strong reliability choice. It lets services commit business data and event intent in the same database transaction, then relay events to Kafka after commit.
+Why Aloqa needs it:
 
-The risk is operational: stuck outbox rows, duplicate event publication, poison events, or consumer lag need monitoring.
+Some data changes too quickly to treat like permanent records.
 
-## Redis Usage
+Examples:
 
-Redis appears in auth/session-adjacent behavior, realtime room state, WebSocket notification pub/sub, presence, typing, and cache behavior.
+- who is currently online
+- who is typing
+- current meeting room state
+- temporary notification delivery
 
-Source paths:
+Where it is used:
 
-- `aloqa-backend/auth-service/`
-- `aloqa-backend/realtime-service/internal/infrastructure/redis/`
-- `aloqa-backend/ws-gateway/`
-- `aloqa-backend/deploy/prod/docker-compose.yml`
+```text
+aloqa-backend/realtime-service/internal/infrastructure/redis/
+aloqa-backend/ws-gateway/
+```
 
-Realtime Redis keys include room state, pin state, online users, participant state, typing, presence, and reaction-limit-style state. Source path: `aloqa-backend/realtime-service/internal/infrastructure/redis/room_state.go`.
+## What is MinIO?
 
-Redis data should be treated as reconstructable or ephemeral unless a specific key is proven durable.
+MinIO stores uploaded files.
 
-## MinIO and File Storage
+Analogy:
 
-MinIO stores uploaded file bytes. Postgres stores metadata and access state. ClamAV scans uploaded content. File processing uses media/document tooling in the file service.
+MinIO is the storage room. PostgreSQL stores the index card that says which box is which.
 
-Source paths:
+Where it is used:
 
-- `aloqa-backend/file-service/`
-- `aloqa-backend/deploy/compose/core/docker-compose.yml`
-- `aloqa-backend/deploy/prod/docker-compose.yml`
+```text
+aloqa-backend/file-service/
+aloqa-backend/deploy/prod/docker-compose.yml
+```
 
-Critical questions for production:
+## What is OpenSearch?
 
-- Are buckets private by default?
-- Are signed URLs short-lived?
-- Are failed scans quarantined?
-- Are large uploads streamed safely?
-- Are thumbnails derived only from safe, scanned content?
+OpenSearch is the search engine.
 
-I cannot determine all production storage policies from the codebase alone.
+Analogy:
 
-## OpenSearch
+The database is the warehouse. OpenSearch is the searchable index at the front desk.
 
-OpenSearch is used by `search-service` for full-text search and reindex behavior.
+Why Aloqa needs it:
 
-Source paths:
+Users expect fast search across messages, files, and people. Searching directly through every database record can be slow and limited.
 
-- `aloqa-backend/search-service/`
-- `aloqa-backend/shared/proto/search/`
-- `aloqa-backend/deploy/prod/docker-compose.yml`
+Where it is used:
 
-Search should be assumed eventually consistent unless product requirements explicitly guarantee read-after-write search behavior.
+```text
+aloqa-backend/search-service/
+```
 
-## Database Risks
+## What is an outbox table?
 
-### Migration Volume and State Machines
+An outbox table stores events that need to be delivered later.
 
-The schema has many migrations, especially for meeting features. Complex state machines need both migration tests and behavior tests.
+Analogy:
 
-### Cross-Service Ownership
+It is the "outgoing mail" tray on a desk.
 
-Many services use the same Postgres database. That can be pragmatic, but it weakens strict microservice data isolation. Table ownership should be documented so one service does not casually depend on another service's internals.
+Example:
 
-### Outbox Monitoring
+```text
+Message saved
+  -> outbox row created
+  -> background worker sends event to Kafka
+  -> WebSocket Gateway notifies users
+```
 
-Outbox tables are good, but they need operational dashboards:
+Why Aloqa needs it:
 
-- oldest unprocessed row age
-- retry count
-- event publish failures
-- consumer lag
-- dead-letter behavior
+It prevents losing events when the database succeeds but the delivery system is temporarily unavailable.
 
-I cannot determine from the codebase whether those dashboards exist.
+Where it is used:
 
-### Data Retention
+```text
+aloqa-backend/platform/migrations/20260610000001_messaging_outbox.*
+aloqa-backend/platform/migrations/20260612000001_channels_outbox.*
+aloqa-backend/platform/migrations/20260622085254_meeting_outbox.*
+```
 
-The codebase shows soft-delete-like fields and deletion/restore flows in places, but I cannot determine a complete retention policy for users, messages, files, meeting recordings, notifications, or audit logs from the codebase.
+## Important database files
 
-## Database Assessment
+```text
+aloqa-backend/platform/migrations/
+aloqa-backend/deploy/compose/core/docker-compose.yml
+aloqa-backend/deploy/prod/docker-compose.yml
+```
 
-The database design matches a feature-rich collaboration system. The schema is broad and pragmatic. The most important improvements are not new tables; they are migration discipline, table ownership documentation, outbox observability, and integration tests for stateful workflows.
+## What can break if database changes?
+
+Changing database tables can break:
+
+- login
+- permissions
+- message history
+- file access
+- unread counts
+- meeting joins
+- search indexing
+- notifications
+- migrations during deployment
+
+Change cost:
+
+```text
+Add simple optional field       -> medium
+Change required field           -> high
+Change permission-related table -> high
+Change meeting table            -> high
+Delete or rename table/column   -> very high
+```
+
+## Unknowns from code alone
+
+I cannot determine from the codebase alone:
+
+- whether every production migration has run successfully
+- production backup policy
+- data retention policy for all data types
+- whether dashboards exist for stuck outbox rows
+- exact production storage hardening for uploaded files
+
+## What you should remember
+
+- PostgreSQL is the long-term source of truth.
+- Migrations are ordered database changes.
+- Redis is short-term memory.
+- MinIO stores uploaded file contents.
+- OpenSearch makes search fast.
+- Kafka and outbox tables help deliver events.
+- Meeting data is one of the most complex areas.
+- Database changes are usually higher risk than UI-only changes.
+- Permissions and file access changes need extra care.

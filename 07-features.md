@@ -1,303 +1,585 @@
-# Feature Audit
+# 07. Features
 
-## Feature Map
+## What is this chapter?
 
-Aloqa implements a broad collaboration feature set:
+This chapter explains Aloqa by product feature.
 
-- account and security
-- companies and workspaces
-- channels and membership
-- custom roles and permissions
-- direct messages
-- channel messaging
-- message threads, reactions, pins, read state, and forwarding
-- files and file sharing
-- notifications
-- full-text search
-- meetings and calls
-- waiting rooms
-- meeting chat
-- meeting admins and permissions
-- device requests
-- breakout rooms
-- realtime WebSocket updates
-- web, desktop, and mobile client surfaces
+For each feature, it answers:
 
-The features are not evenly mature. Core backend contracts exist for many areas, but some frontend route helpers and app screens appear ahead of guaranteed backend/runtime validation.
+- What is it?
+- Why does the business need it?
+- Who probably requested it?
+- What user journey does it support?
+- Which backend services are affected?
+- Which frontend screens are affected?
+- Which database tables are affected?
+- What could break if it changes?
+- How expensive is it likely to modify?
 
-## Account and Security
+## Feature map
 
-Capabilities:
+```text
+Aloqa
+  |-- Account and security
+  |-- Companies and workspaces
+  |-- Channels and roles
+  |-- Messaging and direct messages
+  |-- Files
+  |-- Meetings and calls
+  |-- Notifications
+  |-- Search
+  |-- Realtime updates
+```
 
-- register user
-- login
-- logout and logout all
-- refresh token
-- current user lookup
-- profile and settings update
-- email verification and resend
-- forgot/reset password
-- Google login
-- magic link login
-- session listing
-- password change
-- 2FA enable/disable/login verification
+Quick terms used in this chapter:
 
-Backend sources:
+- BFF means Backend for Frontend, the web app's helper server layer.
+- MinIO means storage for uploaded file contents.
+- ClamAV means malware scanning for uploaded files.
+- LiveKit means the audio/video meeting system.
+- WebSocket means a live connection for instant updates.
+- Kafka means internal event delivery.
+- Redis means short-term live state storage.
+- OpenSearch means the search engine.
 
-- `aloqa-backend/auth-service/`
-- `aloqa-backend/shared/proto/auth/`
-- `aloqa-backend/shared/api/api-gateway/v1/paths/`
+## Account and security
 
-Frontend sources:
+What it is:
 
-- `aloqa-frontend/apps/web/app/`
-- `aloqa-frontend/packages/core/src/api/routes.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/`
+This is how users prove who they are.
 
-Product note: auth is a product-critical area because it affects every platform and every backend request.
+It includes login, logout, password reset, email verification, 2FA, Google login, magic links, sessions, profile, and privacy settings.
 
-## Companies, Workspaces, and Channels
+Why the business needs it:
 
-Capabilities:
+Companies will not trust a collaboration tool unless accounts are secure.
 
-- company create/read/update/delete
-- company members
-- workspace create/read/update
-- workspace members
-- workspace invites and invite accept
-- workspace storage/quota
-- channel create/read/list
-- public channels
-- archive/unarchive
-- join public channel
-- channel add/remove/mute member
-- user company/workspace/channel lists
+Who probably requested it:
 
-Backend sources:
+- security
+- compliance
+- company admins
+- product leadership
+- users who need account recovery
 
-- `aloqa-backend/org-service/`
-- `aloqa-backend/shared/proto/org/`
-- `aloqa-backend/platform/migrations/`
+User journey:
 
-Frontend sources:
+```text
+User opens Aloqa
+  -> clicks Login
+  -> enters credentials
+  -> backend checks identity
+  -> user enters workspace
+```
 
-- `aloqa-frontend/apps/web/app/w/[wsId]/`
-- `aloqa-frontend/packages/core/src/api/routes.ts`
-- `aloqa-frontend/packages/features/admin/`
-- `aloqa-frontend/packages/features/settings/`
+Affected backend:
 
-This is the structural foundation for all collaboration features.
+```text
+auth-service
+api-gateway
+platform auth utilities
+```
 
-## Roles, Permissions, and ABAC
+Affected frontend:
 
-Capabilities:
+```text
+web auth pages
+desktop auth flow
+mobile auth flow
+web BFF session code
+```
 
-- company roles
-- role permissions
-- role assignment
-- available permissions list
-- company/workspace kick flows
-- user role list
-- ABAC-style permission checks inside backend services
+Affected database:
 
-Backend sources:
+```text
+users
+sessions
+user_settings
+user_privacy
+two-factor related fields
+```
 
-- `aloqa-backend/org-service/internal/core/abac/`
-- `aloqa-backend/platform/pkg/permissions/`
-- `aloqa-backend/platform/migrations/20260520061940_add_abac_roles.*`
-- `aloqa-backend/platform/migrations/20260604000001_custom_roles_v2.*`
+What could break:
 
-PM note: this is the area where product role naming must stay aligned with engineering permission strings. A mismatch here creates "UI says allowed, backend denies" bugs.
+- users cannot log in
+- sessions expire incorrectly
+- 2FA blocks valid users
+- password reset links fail
+- web and mobile behave differently
 
-## Messaging and Direct Messages
+Modification cost:
 
-Capabilities:
+High. Auth touches every platform and has security risk.
 
-- send channel message
-- list channel messages
-- delete and restore messages
-- edit message
-- reactions
-- pins and pinned lists
-- read/unread
-- channel members list
-- forward message
-- reply/thread
-- create/list/delete DM
-- block/unblock user
+## Companies, workspaces, and channels
 
-Backend sources:
+What it is:
 
-- `aloqa-backend/messaging-service/`
-- `aloqa-backend/shared/proto/messaging/`
-- `aloqa-backend/platform/migrations/`
+This is the structure of the workplace inside Aloqa.
 
-Frontend sources:
+```text
+Company
+  -> Workspace
+      -> Channel
+          -> Messages and members
+```
 
-- `aloqa-frontend/packages/features/chat/`
-- `aloqa-frontend/packages/core/src/realtime/events.ts`
-- `aloqa-frontend/apps/web/app/w/[wsId]/`
-- `aloqa-frontend/apps/mobile/app/`
+Why the business needs it:
 
-Messaging also drives realtime complexity because a successful message write should usually fan out as an event to subscribed clients.
+Companies need to separate teams, departments, projects, and permissions.
+
+Who probably requested it:
+
+- company admins
+- team leads
+- operations managers
+- enterprise customers
+
+User journey:
+
+```text
+Admin creates company
+  -> creates workspace
+  -> creates channel
+  -> invites members
+  -> members start chatting
+```
+
+Affected backend:
+
+```text
+org-service
+api-gateway
+platform permissions
+```
+
+Affected frontend:
+
+```text
+workspace screens
+channel sidebar
+admin screens
+settings screens
+invite screens
+```
+
+Affected database:
+
+```text
+companies
+company_members
+workspaces
+workspace_members
+channels
+channel_members
+workspace_invites
+```
+
+What could break:
+
+- users see the wrong workspace
+- private channels become visible
+- invites stop working
+- channel membership becomes wrong
+
+Modification cost:
+
+Medium to high. Structure changes affect many screens and permission checks.
+
+## Roles and permissions
+
+What it is:
+
+Permissions decide what a user is allowed to do.
+
+Analogy:
+
+A permission is an access badge.
+
+Some badges open normal doors. Admin badges open more doors.
+
+Why the business needs it:
+
+Companies need control over who can invite users, remove members, create channels, manage storage, or moderate meetings.
+
+Who probably requested it:
+
+- company admins
+- security
+- enterprise customers
+- support teams
+
+User journey:
+
+```text
+Admin opens role settings
+  -> creates custom role
+  -> selects allowed actions
+  -> assigns role to user
+  -> backend enforces permissions
+```
+
+Affected backend:
+
+```text
+org-service
+platform permissions
+api-gateway
+```
+
+Affected frontend:
+
+```text
+admin role screens
+member management screens
+settings screens
+```
+
+Affected database:
+
+```text
+custom_roles
+role_permissions
+user_roles
+company_members
+workspace_members
+```
+
+What could break:
+
+- users get too much access
+- admins lose access
+- frontend shows a button that backend rejects
+- backend allows action frontend hides
+
+Modification cost:
+
+High. Permission changes are security-sensitive.
+
+## Messaging and direct messages
+
+What it is:
+
+This is chat.
+
+It includes channel messages, direct messages, replies, reactions, pins, edits, deletes, read state, unread counts, and blocking.
+
+Why the business needs it:
+
+Messaging is the daily core of the product.
+
+Who probably requested it:
+
+- all users
+- team leads
+- support teams
+- product leadership
+
+User journey:
+
+```text
+User opens channel
+  -> types message
+  -> clicks Send
+  -> message saves
+  -> teammates see it live
+  -> unread counts update
+```
+
+Affected backend:
+
+```text
+messaging-service
+ws-gateway
+api-gateway
+search-service
+notification-service
+```
+
+Affected frontend:
+
+```text
+chat screen
+DM screen
+thread screen
+reaction UI
+unread badges
+realtime client
+```
+
+Affected database:
+
+```text
+messages
+reactions
+channel_members
+dm_channels
+user_blocks
+messaging_outbox
+```
+
+What could break:
+
+- messages do not save
+- messages save but do not appear live
+- unread counts become wrong
+- blocked users can still message
+- search misses messages
+
+Modification cost:
+
+Medium to high. Simple UI changes can be low, but backend or realtime changes are higher risk.
 
 ## Files
 
-Capabilities:
+What it is:
 
-- upload
-- list user files
-- get file metadata
-- get file content
-- delete file
-- share/revoke/list shares
-- batch sharing behavior in gRPC
-- storage info and quotas
-- file attachments in messages and meeting chat
+File upload, file storage, file sharing, file access, and quotas.
 
-Backend sources:
+Why the business needs it:
 
-- `aloqa-backend/file-service/`
-- `aloqa-backend/shared/proto/file/`
-- `aloqa-backend/platform/migrations/20260608000003_files.*`
+Teams need to share documents, images, PDFs, spreadsheets, and meeting files.
 
-Frontend sources:
+Who probably requested it:
 
-- `aloqa-frontend/packages/features/files/`
-- `aloqa-frontend/apps/web/app/api/upload/[...path]/route.ts`
-- `aloqa-frontend/packages/core/src/api/routes.ts`
+- users
+- team leads
+- operations
+- company admins
+- security
 
-Risk: files combine upload size, malware scanning, object storage, share permissions, signed URLs, thumbnails, and quotas. This area should have dedicated security and integration tests.
+User journey:
 
-## Meetings and Calls
+```text
+User uploads file
+  -> backend scans it
+  -> file is stored
+  -> metadata is saved
+  -> allowed users can open it
+```
 
-Capabilities:
+Affected backend:
+
+```text
+file-service
+api-gateway
+MinIO
+ClamAV
+```
+
+Affected frontend:
+
+```text
+file upload UI
+chat attachment UI
+file browser
+meeting file UI
+web upload BFF route
+```
+
+Affected database:
+
+```text
+files
+file_shares
+workspace_storage_settings
+message file IDs
+meeting chat file IDs
+```
+
+What could break:
+
+- upload fails
+- unsafe file is accepted
+- user sees a file they should not see
+- quota becomes wrong
+- file preview fails
+
+Modification cost:
+
+High when permissions, scanning, quotas, or storage are involved.
+
+## Meetings and calls
+
+What it is:
+
+Video/audio meetings plus product rules around them.
+
+It includes:
 
 - create meeting
-- get/update/end meeting
 - join meeting
-- active meeting by channel
 - waiting room
-- admit/reject/cancel waiting
 - meeting chat
-- threads and reactions
-- admins and admin permissions
+- admins
 - room settings
-- participant permissions
-- permission requests
 - device requests
-- pin target
-- mute/kick/ban/unban
-- participant list
+- mute, kick, ban
 - breakout rooms
-- breakout room chat
-- breakout room invites
-- breakout join/waiting flows
 
-Backend sources:
+Why the business needs it:
 
-- `aloqa-backend/realtime-service/`
-- `aloqa-backend/shared/proto/meeting/`
-- `aloqa-backend/platform/migrations/`
+Teams need live discussion, not only text chat.
 
-Frontend sources:
+Who probably requested it:
 
-- `aloqa-frontend/packages/features/calls/`
-- `aloqa-frontend/packages/core/src/realtime/events.ts`
-- `aloqa-frontend/docs/adr/0022-livekit-client-sdk.md`
-- `aloqa-frontend/apps/desktop/`
-- `aloqa-frontend/apps/mobile/`
+- users
+- team leads
+- remote teams
+- enterprise customers
 
-This is the largest single feature domain. It should be managed as a product area with its own acceptance test suite.
+User journey:
+
+```text
+User clicks Join
+  -> backend checks rules
+  -> LiveKit connects audio/video
+  -> WebSocket sends room updates
+  -> meeting controls update live
+```
+
+Affected backend:
+
+```text
+realtime-service
+ws-gateway
+api-gateway
+LiveKit
+Redis
+```
+
+Affected frontend:
+
+```text
+call screens
+meeting chat
+waiting room UI
+device request UI
+breakout room UI
+desktop call surface
+mobile call surface
+```
+
+Affected database:
+
+```text
+meetings
+meeting_participants
+meeting_admins
+meeting_room_settings
+meeting_permission_requests
+meeting_device_requests
+meeting_chat_messages
+breakout_rooms
+breakout_room_participants
+```
+
+What could break:
+
+- users cannot join calls
+- waiting room gets stuck
+- wrong user becomes admin
+- microphone/camera rules fail
+- breakout rooms behave incorrectly
+- mobile and desktop diverge
+
+Modification cost:
+
+High. Meetings touch many backend services, database tables, realtime events, and platform clients.
 
 ## Notifications
 
-Capabilities:
+What it is:
 
-- email verification
+Notifications tell users something happened.
+
+Examples:
+
+- verification email
 - password reset email
 - 2FA email
 - magic link email
-- web notifications
-- list notifications
-- mark notifications read
-- channel mute/unmute notifications
+- in-app notification
+- channel mute/unmute
 
-Backend sources:
+Why the business needs it:
 
-- `aloqa-backend/notification-service/`
-- `aloqa-backend/shared/proto/notification/`
-- `aloqa-backend/shared/api/api-gateway/v1/paths/notifications/`
+Users need to know when something needs attention.
 
-Frontend sources:
+Affected backend:
 
-- `aloqa-frontend/packages/core/src/realtime/events.ts`
-- `aloqa-frontend/packages/core/src/realtime/bridges.ts`
+```text
+notification-service
+ws-gateway
+Kafka
+Redis
+```
 
-Notifications depend on both stored notification records and realtime/user-specific delivery.
+Affected frontend:
+
+```text
+notification UI
+badges
+settings for muted channels
+realtime client
+```
+
+Affected database:
+
+```text
+notifications
+channel mute records
+```
+
+Modification cost:
+
+Medium. Email changes can be lower risk; realtime notification changes are higher.
 
 ## Search
 
-Capabilities:
+What it is:
 
-- search
-- admin reindex
-- asynchronous indexing from events
+Search helps users find old messages, files, or people.
 
-Backend sources:
+Why the business needs it:
 
-- `aloqa-backend/search-service/`
-- `aloqa-backend/shared/proto/search/`
-- `aloqa-backend/shared/api/api-gateway/v1/paths/search.yaml`
-- `aloqa-backend/shared/api/api-gateway/v1/paths/admin_search_reindex.yaml`
+Collaboration tools become less useful if users cannot find past work.
 
-Frontend sources:
+User journey:
 
-- `aloqa-frontend/packages/features/search/`
-- `aloqa-frontend/packages/core/src/api/routes.ts`
+```text
+User types search text
+  -> frontend sends query
+  -> Search Service asks OpenSearch
+  -> results return
+```
 
-Search should be documented as eventually consistent unless product requirements say otherwise.
+Affected backend:
 
-## Realtime Product Behavior
+```text
+search-service
+OpenSearch
+Kafka consumers
+```
 
-Realtime features include:
+Affected frontend:
 
-- chat message events
-- message edit/delete/restore/reaction/pin events
-- typing indicators
-- notifications
-- meeting room updates
-- meeting participant updates
-- meeting chat and reaction updates
-- breakout room updates
-- waiting room and permission request updates
-- device state updates
+```text
+search screens
+search result UI
+```
 
-Backend sources:
+Modification cost:
 
-- `aloqa-backend/ws-gateway/`
-- `aloqa-backend/messaging-service/`
-- `aloqa-backend/realtime-service/`
+Medium. Ranking and indexing changes may be higher.
 
-Frontend source: `aloqa-frontend/packages/core/src/realtime/events.ts`.
+## What you should remember
 
-## Feature Gaps and Unknowns
-
-I cannot determine from static code inspection which features are fully shippable in production UX. The presence of routes, screens, and contracts does not prove end-to-end runtime completeness.
-
-Areas that need product/QA verification:
-
-- all meeting moderation edge cases
-- file scan failure behavior
-- quota enforcement UX
-- role and permission matrix
-- mobile parity with web
-- desktop parity with web
-- offline or reconnect behavior after long disconnection
-- search freshness and reindex behavior
-- notification delivery on each platform
-
-## Feature Assessment
-
-Aloqa has enough implemented surface to be managed as a mature product with explicit feature ownership. The next PM/engineering step should be feature readiness matrices: contract present, backend implementation present, web UI present, desktop UI present, mobile UI present, integration tests present, production smoke present.
+- Features are not isolated. Most touch frontend, backend, database, and sometimes realtime.
+- Auth and permissions are high risk because they affect access.
+- Messaging is core daily usage.
+- Files are security-sensitive.
+- Meetings are the most complex product area.
+- Search may be eventually consistent.
+- Notifications depend on both stored data and live delivery.
+- A PM should ask which services, screens, and tables a feature touches before estimating it.

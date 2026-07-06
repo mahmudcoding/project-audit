@@ -1,290 +1,251 @@
-# Project Structure
+# 12. Project Structure
 
-## Parent Directory
+## What is project structure?
 
-The local project root is:
+Project structure is the folder map.
+
+It answers:
+
+- Where is the frontend?
+- Where is the backend?
+- Where are API contracts?
+- Where are migrations?
+- Where are deployment files?
+
+Real-life analogy:
+
+It is the building directory near an elevator.
 
 ```text
-/Users/mahmud/Projects/aloqa
+Floor 1 -> lobby
+Floor 2 -> engineering
+Floor 3 -> finance
+Warehouse -> storage
 ```
 
-Important children:
+## Why PMs should care
+
+You do not need to write code, but knowing the map helps you:
+
+- ask the right team
+- understand estimates
+- follow bug reports
+- know whether a feature is frontend-only or backend-heavy
+- understand why one change touches many files
+
+Quick terms used in this chapter:
+
+- BFF means Backend for Frontend, the web app's helper server layer.
+- OpenAPI means the written public HTTP API menu.
+- gRPC means the private phone system between backend services.
+- CI/CD means automated checking and delivery workflows.
+- Kafka means internal event delivery.
+- WebSocket means a live connection that stays open.
+- MinIO means file object storage.
+- ClamAV means malware scanning for uploaded files.
+- Redis means short-term memory.
+- LiveKit means the audio/video meeting system.
+
+## Top-level map
 
 ```text
-aloqa/
-  aloqa-backend/
+/Users/mahmud/Projects/aloqa/
   aloqa-frontend/
+  aloqa-backend/
   docs/
     project-audit/
 ```
 
-`aloqa-backend` and `aloqa-frontend` are the primary source repositories. The audit docs are placed at the parent level to cover both without modifying either child repo source tree.
-
-## Backend Root
-
-Source path: `aloqa-backend/`
-
-Important backend root files and directories:
-
-```text
-aloqa-backend/
-  AGENTS.md
-  README.md
-  Taskfile.yml
-  go.work
-  api-gateway/
-  auth-service/
-  file-service/
-  messaging-service/
-  notification-service/
-  org-service/
-  platform/
-  realtime-service/
-  search-service/
-  shared/
-  ws-gateway/
-  deploy/
-  .github/
-```
-
-## Backend Services
-
-Each backend service is a Go module. The consistent service shape is:
-
-```text
-service-name/
-  cmd/
-  internal/
-  go.mod
-```
-
-The backend repository instructions describe a layered convention:
-
-```text
-cmd/main.go
-internal/core/app
-internal/core/config
-internal/core/domain
-internal/core/errors
-internal/features/v1/<feature>/
-  transport/
-  service/
-  repository/
-  converter/
-```
-
-Source path: `aloqa-backend/AGENTS.md`.
-
-Actual service directories:
-
-```text
-aloqa-backend/api-gateway/
-aloqa-backend/auth-service/
-aloqa-backend/file-service/
-aloqa-backend/messaging-service/
-aloqa-backend/notification-service/
-aloqa-backend/org-service/
-aloqa-backend/realtime-service/
-aloqa-backend/search-service/
-aloqa-backend/ws-gateway/
-```
-
-## Backend Platform Module
-
-Source path: `aloqa-backend/platform/`
-
-Important areas:
-
-```text
-platform/
-  migrations/
-  pkg/
-```
-
-`platform/migrations/` is the authoritative migration location for the shared Postgres schema.
-
-`platform/pkg/` contains shared runtime helpers such as auth utilities, permissions, logging, middleware, database/Redis helpers, and other cross-service code.
-
-## Backend Shared Contracts
-
-Source path: `aloqa-backend/shared/`
-
-Important areas:
-
-```text
-shared/
-  api/
-    api-gateway/
-      v1/
-        api-gateway.openapi.yaml
-        paths/
-  proto/
-    auth/
-    file/
-    meeting/
-    messaging/
-    notification/
-    org/
-    presence/
-    search/
-```
-
-Backend instructions say generated code under `shared/pkg` and tools under `shared/bin` should not be read or edited manually. Source path: `aloqa-backend/AGENTS.md`.
-
-## Backend Deploy Structure
-
-Source path: `aloqa-backend/deploy/`
-
-Important areas:
-
-```text
-deploy/
-  compose/
-    core/
-      docker-compose.yml
-  prod/
-    docker-compose.yml
-    nginx/
-      nginx.conf
-```
-
-The backend production compose describes infrastructure, backend services, frontend, and nginx in one deployment.
-
-## Frontend Root
-
-Source path: `aloqa-frontend/`
-
-Important frontend root files and directories:
+## Frontend map
 
 ```text
 aloqa-frontend/
-  AGENTS.md
-  package.json
-  pnpm-lock.yaml
   apps/
+    web/
+    desktop/
+    mobile/
   packages/
+    core/
+    features/
+    ui-kit-*/
   docs/
+    adr/
   deploy/
   .github/
 ```
 
-The root package file defines workspace scripts and package manager behavior. Source path: `aloqa-frontend/package.json`.
+What each part means:
 
-## Frontend Apps
+| Folder | Plain meaning |
+|---|---|
+| `apps/web` | browser app |
+| `apps/desktop` | installed desktop app |
+| `apps/mobile` | phone app |
+| `packages/core` | shared frontend logic |
+| `packages/features` | shared feature areas |
+| `packages/ui-kit-*` | UI building blocks |
+| `docs/adr` | architecture decisions |
+| `deploy` | deployment config |
+| `.github` | automation workflows |
 
-Source path: `aloqa-frontend/apps/`
-
-```text
-apps/
-  web/
-  desktop/
-  mobile/
-```
-
-`apps/web`:
-
-- Next.js app
-- browser UI
-- BFF route handlers
-- auth session sealing and refresh
-
-`apps/desktop`:
-
-- Electron app
-- main/preload/renderer layers
-- desktop shell and call surfaces
-
-`apps/mobile`:
-
-- Expo/React Native app
-- mobile navigation
-- mobile chat/calls/files/settings surfaces
-- native storage and media integrations
-
-## Frontend Packages
-
-Source path: `aloqa-frontend/packages/`
-
-Important categories:
+## Backend map
 
 ```text
-packages/
-  core/
-  features/
-    admin/
-    calendar/
-    calls/
-    chat/
-    files/
-    search/
-    settings/
-  ui-kit-*/
-  eslint-config/
+aloqa-backend/
+  api-gateway/
+  auth-service/
+  org-service/
+  messaging-service/
+  file-service/
+  realtime-service/
+  notification-service/
+  search-service/
+  ws-gateway/
+  platform/
+  shared/
+  deploy/
+  .github/
 ```
 
-`packages/core` is the shared headless core. It includes API clients, route builders, realtime client logic, and shared domain behavior.
+What each part means:
 
-Feature packages are intended to be headless, although some still expose legacy platform UI entrypoints.
+| Folder | Plain meaning |
+|---|---|
+| `api-gateway` | backend reception desk |
+| `auth-service` | login and sessions |
+| `org-service` | companies, workspaces, channels, roles |
+| `messaging-service` | chat and DMs |
+| `file-service` | uploads, files, shares |
+| `realtime-service` | meeting rules and room state |
+| `notification-service` | email and in-app notifications |
+| `search-service` | search |
+| `ws-gateway` | live WebSocket updates |
+| `platform` | shared backend tools and migrations |
+| `shared` | API contracts |
+| `deploy` | local and production deployment files |
 
-## Frontend Docs and ADRs
+## Where API contracts live
 
-Source path: `aloqa-frontend/docs/`
-
-Important docs:
-
-- `docs/adr/0022-livekit-client-sdk.md`
-- `docs/adr/0023-platform-first-architecture.md`
-- `docs/adr/0037-web-bff-backend-session.md`
-- `docs/adr/0038-single-aloqa-backend-target.md`
-- `docs/CICD.md`
-- `docs/infrastructure-architecture.md`
-
-These docs are important because they explain architecture decisions that are not obvious from package names alone.
-
-## Frontend Deploy Structure
-
-Source path: `aloqa-frontend/deploy/`
-
-Important files:
+HTTP/OpenAPI contracts:
 
 ```text
-deploy/
-  nginx.prod.conf
-  smoke-live.sh
+aloqa-backend/shared/api/api-gateway/v1/
 ```
 
-The frontend production nginx file routes browser `/api/*` to the web app/BFF, `/ws/chat` to the WebSocket gateway, `/livekit/*` to LiveKit, and `/files/*` to the API gateway. Source path: `aloqa-frontend/deploy/nginx.prod.conf`.
-
-## CI/CD Structure
-
-Backend:
+gRPC contracts:
 
 ```text
-aloqa-backend/.github/workflows/deploy.yml
+aloqa-backend/shared/proto/
 ```
 
-Frontend:
+Plain English:
+
+These folders define the promises between parts of the system.
+
+## Where database changes live
 
 ```text
-aloqa-frontend/.github/workflows/release-pr.yml
-aloqa-frontend/.github/workflows/release-cd.yml
-aloqa-frontend/.github/workflows/mobile-ci.yml
+aloqa-backend/platform/migrations/
 ```
 
-Source paths:
+These files define changes to database tables over time.
 
-- `aloqa-backend/.github/workflows/`
-- `aloqa-frontend/.github/workflows/`
-- `aloqa-frontend/docs/CICD.md`
+## Where deployment files live
 
-## Structural Assessment
+Backend deployment:
 
-The project structure is understandable and mostly well separated:
+```text
+aloqa-backend/deploy/
+aloqa-backend/deploy/prod/docker-compose.yml
+aloqa-backend/deploy/prod/nginx/nginx.conf
+```
 
-- backend services are explicit modules
-- backend contracts are centralized
-- frontend apps are separated by platform
-- frontend shared logic has a clear home
-- deployment files are present in both repos
+Frontend deployment:
 
-The main structural weakness is cross-repo deployment ownership. Both backend and frontend contain production edge config, and those configs encode different assumptions about `/api/*`.
+```text
+aloqa-frontend/deploy/nginx.prod.conf
+aloqa-frontend/deploy/smoke-live.sh
+```
+
+CI/CD:
+
+```text
+aloqa-backend/.github/workflows/
+aloqa-frontend/.github/workflows/
+```
+
+## How to find the owner of a bug
+
+If bug says "cannot log in":
+
+```text
+auth-service
+api-gateway
+web BFF
+frontend auth screen
+```
+
+If bug says "message sent but teammate does not see it":
+
+```text
+messaging-service
+messaging_outbox
+Kafka
+ws-gateway
+frontend realtime client
+```
+
+If bug says "file upload fails":
+
+```text
+web upload route
+api-gateway
+file-service
+ClamAV
+MinIO
+files database tables
+```
+
+If bug says "meeting join fails":
+
+```text
+realtime-service
+LiveKit
+Redis
+ws-gateway
+call UI
+meeting tables
+```
+
+## Important caution about generated code
+
+Generated code means code created automatically from contracts.
+
+Backend instructions say not to manually read or edit generated code under:
+
+```text
+aloqa-backend/shared/pkg/
+aloqa-backend/shared/bin/
+```
+
+Source of truth is:
+
+```text
+aloqa-backend/shared/api/
+aloqa-backend/shared/proto/
+```
+
+Why PMs should care:
+
+If engineers say "we need to regenerate contracts", this is what they mean.
+
+## What you should remember
+
+- The project has separate frontend and backend repos.
+- Frontend apps live under `aloqa-frontend/apps`.
+- Shared frontend logic lives under `aloqa-frontend/packages`.
+- Backend services live as separate folders under `aloqa-backend`.
+- API contracts live under `aloqa-backend/shared`.
+- Database migrations live under `aloqa-backend/platform/migrations`.
+- Deployment files exist in both frontend and backend repos.
+- For bugs, start by identifying the user action, then follow the folder map.

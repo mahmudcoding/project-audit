@@ -1,243 +1,330 @@
-# Frontend Audit
+# 03. Frontend
 
-## Frontend Summary
+## What is the frontend?
 
-The frontend is a platform-first TypeScript monorepo under `aloqa-frontend`. It targets:
+The frontend is everything the user sees and clicks.
 
-- Web: `aloqa-frontend/apps/web`
-- Desktop: `aloqa-frontend/apps/desktop`
-- Mobile: `aloqa-frontend/apps/mobile`
+It includes:
 
-The frontend strategy is not "one UI everywhere." ADR-0023 defines the intended model as shared headless logic plus app-owned UI. Source path: `aloqa-frontend/docs/adr/0023-platform-first-architecture.md`.
+- the web app in a browser
+- the desktop app
+- the mobile app
+- buttons, forms, message lists, file views, meeting controls, settings pages
 
-This is the right direction for a product with browser, Electron, and mobile surfaces. The tradeoff is that shared business logic must be very well separated from rendering assumptions.
+Real-life analogy:
 
-## Tooling and Package Model
+The frontend is the shop floor. Customers do not see the warehouse or office departments. They see counters, signs, forms, and staff who take requests.
 
-The root package manifest declares:
+## Why does it exist?
 
-- pnpm workspace package manager
-- Turbo task orchestration
-- TypeScript strict posture
-- shared scripts for build, dev, lint, typecheck, test, verification, API codegen, smoke checks, mobile checks, and release workflows
+The backend can store data and enforce rules, but users need a usable product.
 
-Source path: `aloqa-frontend/package.json`.
+The frontend turns backend capabilities into real user actions:
 
-The workspace is organized around apps and packages:
+```text
+Click Login
+Click Send
+Click Upload
+Click Join Meeting
+Click Search
+Click Invite Member
+```
 
-- `apps/*`: deployable applications
-- `packages/*`: shared packages and feature packages
-- `tooling/*`: supporting tools where present
+## The three frontend apps
 
-The frontend AGENTS file documents a strict engineering posture: avoid `any`, avoid default exports, use adapters, preserve state boundaries, and keep CI budgets under control. Source path: `aloqa-frontend/AGENTS.md`.
+```text
+aloqa-frontend/
+  apps/web/       -> browser app
+  apps/desktop/   -> Electron desktop app
+  apps/mobile/    -> Expo mobile app
+```
 
-## Web App
+### Web app
 
-The web app is a Next.js app in `aloqa-frontend/apps/web`.
+What it is:
 
-Important responsibilities:
+The browser version of Aloqa.
 
-- Browser UI for auth, workspace, chat, calls, files, search, settings, and admin areas.
-- BFF route handlers under `apps/web/app/api/`.
-- Session sealing, refresh, and CSRF handling under `apps/web/src/lib/auth/`.
-- Same-origin API behavior for browser REST calls.
-- Upload streaming route for large file uploads.
+Why it exists:
 
-Key paths:
+Users can open Aloqa from a normal web browser without installing anything.
 
-- `aloqa-frontend/apps/web/app/`
-- `aloqa-frontend/apps/web/app/api/[...path]/route.ts`
-- `aloqa-frontend/apps/web/app/api/upload/[...path]/route.ts`
-- `aloqa-frontend/apps/web/app/api/realtime/ws-ticket/route.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/sessionCookie.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/sessionRefresh.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/withCsrf.ts`
+Where it is used:
 
-The web app has an important security role. It is not just a static client; it owns backend-session sealing and controls how browser-originated REST calls reach the backend.
+```text
+aloqa-frontend/apps/web/
+```
 
-## Desktop App
+Example user journey:
 
-The desktop app is an Electron application under `aloqa-frontend/apps/desktop`.
+```text
+User opens website
+  -> sees login page
+  -> logs in
+  -> sees workspace
+  -> opens a channel
+  -> sends message
+```
 
-Important responsibilities:
+The web app also has a special backend-like layer called the BFF.
 
-- Native desktop shell.
-- Renderer app with workspace/channel/settings/call screens.
-- Desktop bridges for call surfaces and deep links.
-- Electron-specific packaging and runtime concerns.
+### Desktop app
 
-Key paths:
+What it is:
 
-- `aloqa-frontend/apps/desktop/`
-- `aloqa-frontend/apps/desktop/src/main/`
-- `aloqa-frontend/apps/desktop/src/preload/`
-- `aloqa-frontend/apps/desktop/src/renderer/`
+The installed desktop version of Aloqa.
 
-The desktop app likely uses more direct API/client behavior than the web BFF, depending on its runtime token storage. I cannot fully determine every desktop auth storage path without a dedicated deep dive through renderer auth screens and adapters.
+Why it exists:
 
-## Mobile App
+Some users prefer a dedicated app with desktop behavior, window controls, deep links, and call surfaces.
 
-The mobile app is an Expo/React Native app under `aloqa-frontend/apps/mobile`.
+Where it is used:
 
-Important responsibilities:
+```text
+aloqa-frontend/apps/desktop/
+```
 
-- Mobile auth flows.
-- Workspace tab navigation.
-- Chat, channel, DM, thread, calls, files, settings, and admin surfaces.
-- Native realtime/media integrations such as LiveKit React Native.
-- Mobile storage and security concerns such as secure store, MMKV, SQLite, SSL pinning, notifications, and native sharing.
+### Mobile app
 
-Key paths:
+What it is:
 
-- `aloqa-frontend/apps/mobile/`
-- `aloqa-frontend/apps/mobile/app/`
-- `aloqa-frontend/apps/mobile/package.json`
+The phone version of Aloqa.
 
-The mobile app has the highest platform-specific integration burden because it combines navigation, secure storage, push/native notifications, LiveKit, and offline-adjacent storage.
+Why it exists:
 
-## Shared Core
+Users need chat, calls, files, and notifications away from their computer.
 
-`packages/core` is the most important frontend package. It contains reusable, platform-neutral behavior:
+Where it is used:
 
-- API client: `aloqa-frontend/packages/core/src/api/client.ts`
-- API routes: `aloqa-frontend/packages/core/src/api/routes.ts`
-- API endpoint builders: `aloqa-frontend/packages/core/src/api/endpoints.ts`
-- WebSocket path helpers: `aloqa-frontend/packages/core/src/api/wsPath.ts`
-- Realtime client: `aloqa-frontend/packages/core/src/realtime/client.ts`
-- Realtime events: `aloqa-frontend/packages/core/src/realtime/events.ts`
-- Realtime bridges: `aloqa-frontend/packages/core/src/realtime/bridges.ts`
+```text
+aloqa-frontend/apps/mobile/
+```
 
-The API client supports JSON and FormData bodies, authorization tokens, cookies, 401 refresh behavior, blob requests, and beacon-style requests. Source path: `aloqa-frontend/packages/core/src/api/client.ts`.
+Mobile has extra concerns:
 
-The route registry uses `/api/v1` as its backend API prefix. Source path: `aloqa-frontend/packages/core/src/api/routes.ts`.
+- secure phone storage
+- push notifications
+- native sharing
+- mobile call behavior
+- reconnecting on unstable networks
 
-## Feature Packages
+## What is the BFF?
 
-Feature packages include:
+BFF means "Backend for Frontend."
 
-- `@aloqa/admin`
-- `@aloqa/calendar`
-- `@aloqa/calls`
-- `@aloqa/chat`
-- `@aloqa/files`
-- `@aloqa/search`
-- `@aloqa/settings`
+Plain English:
 
-Source path: `aloqa-frontend/packages/features/`.
+The web browser does not always talk directly to the backend. It talks to a helper layer inside the web app first.
 
-The intended direction is headless feature logic, but several packages still expose platform UI entrypoints such as `ui-web`, `ui-desktop`, or `ui-mobile`. That is a known architectural transition risk against ADR-0023. `@aloqa/files` appears closer to the intended headless model.
+Analogy:
 
-This should not be fixed by a broad rewrite. Migrate one feature package at a time when changing that feature anyway.
+The BFF is a receptionist.
 
-## Routing and Screens
+```text
+Browser
+  -> BFF receptionist
+  -> backend reception desk
+  -> backend department
+```
 
-The web app contains routes for:
+Why Aloqa needs it:
 
-- auth: login, signup, forgot password, reset password, magic link
-- BFF API route handlers
-- docs/openapi
-- guest join
-- workspace shell under `w/[wsId]`
-- chat, DMs, channels, calls, files, calendar, search, settings, admin, directories
+- keep login tokens safer
+- refresh login state on the server side
+- protect browser requests
+- make the browser talk to the same website origin
 
-Source path: `aloqa-frontend/apps/web/app`.
+Where it is used:
 
-The mobile app contains routes for:
+```text
+aloqa-frontend/apps/web/app/api/
+aloqa-frontend/apps/web/src/lib/auth/
+```
 
-- auth
-- protected workspace tabs
-- chat, calls, more
-- channel, DM, thread
-- calendar, files, settings/admin
-- guest join and native sharing
+## Example: login in the web app
 
-Source path: `aloqa-frontend/apps/mobile/app`.
+```text
+1. User clicks Login.
+2. Browser sends email and password to the web app.
+3. The BFF forwards the request to the backend.
+4. Backend checks the user.
+5. Backend returns login tokens.
+6. BFF seals those tokens inside a safe cookie.
+7. Browser shows the workspace.
+```
 
-The desktop app contains renderer screens for workspace/channel/settings/call flows. Source path: `aloqa-frontend/apps/desktop/src/renderer`.
+Diagram:
 
-## Web BFF Behavior
+```text
+User
+  -> Web screen
+  -> BFF
+  -> API Gateway
+  -> Auth Service
+  -> Database
+  -> back to BFF
+  -> workspace screen
+```
 
-The web BFF is one of the most important frontend design decisions.
+## Example: sending a chat message
 
-The catch-all REST route:
+```text
+1. User types a message.
+2. Frontend calls the API.
+3. Backend saves the message.
+4. Frontend shows the sent message.
+5. WebSocket sends the new message to other users.
+```
 
-- runs in Node runtime
-- reads the sealed backend session
-- forwards requests to the backend gateway
-- attaches backend `access_token` as a Cookie header server-side
-- buffers normal request bodies up to a replay limit for refresh retry
-- handles stale-token refresh
-- uses CSRF protection for mutating requests
+Diagram:
 
-Source path: `aloqa-frontend/apps/web/app/api/[...path]/route.ts`.
+```text
+Chat screen
+  -> API client
+  -> backend
+  -> realtime client
+  -> screen updates
+```
 
-The upload route is separate because large streaming uploads are not safely replayable after refresh. Source path: `aloqa-frontend/apps/web/app/api/upload/[...path]/route.ts`.
+## Shared frontend code
 
-The WebSocket ticket route issues a short-lived token for direct WebSocket connection. Source path: `aloqa-frontend/apps/web/app/api/realtime/ws-ticket/route.ts`.
+Some frontend code is shared by all apps.
 
-## Frontend Realtime
+This shared code lives mainly here:
 
-The frontend realtime client is robust relative to the backend complexity:
+```text
+aloqa-frontend/packages/core/
+```
 
-- idempotent connect behavior
-- reconnect with exponential backoff and jitter
-- heartbeat and missed-pong tracking
-- optional resume key and resume sequence
-- injected token refresh
-- support for backend envelope and flat-frame event formats
+What it does:
 
-Source path: `aloqa-frontend/packages/core/src/realtime/client.ts`.
+- builds API URLs
+- sends API requests
+- handles realtime WebSocket connections
+- defines shared event names
+- stores shared business logic
 
-Event names are mapped in `aloqa-frontend/packages/core/src/realtime/events.ts`. That file is a critical integration contract with `aloqa-backend/ws-gateway` and backend event producers.
+Why it exists:
 
-## Frontend Testing and CI
+Without shared code, the web, desktop, and mobile apps would each rewrite the same logic.
 
-The frontend repo contains stronger test and CI structure than the backend:
+## Platform-first design
 
-- root scripts for lint, typecheck, test, and verify
-- release PR workflow
-- release CD workflow
-- mobile CI workflow
-- smoke checks for production behavior
-- security/performance related scripts
+The frontend architecture says:
 
-Source paths:
+```text
+Share logic.
+Do not force every platform to share the same UI.
+```
 
-- `aloqa-frontend/package.json`
-- `aloqa-frontend/.github/workflows/`
-- `aloqa-frontend/deploy/smoke-live.sh`
-- `aloqa-frontend/docs/CICD.md`
+Plain English:
 
-The release policy says CI is primarily for PRs targeting `main`. Source path: `aloqa-frontend/docs/CICD.md`.
+The mobile screen, desktop screen, and web screen can look different because users use them differently. But the rules behind them should be shared where possible.
 
-## Frontend Risks
+Where this is explained:
 
-### BFF Routing Risk
+```text
+aloqa-frontend/docs/adr/0023-platform-first-architecture.md
+```
 
-The web BFF security model only holds if browser `/api/*` traffic reaches Next.js. The frontend production nginx file supports this model; the backend production nginx file may not. Source paths:
+Why a PM should care:
 
-- `aloqa-frontend/deploy/nginx.prod.conf`
-- `aloqa-backend/deploy/prod/nginx/nginx.conf`
+If a feature is added, it may require:
 
-I cannot determine from the codebase which edge configuration is live.
+- shared logic in `packages/core`
+- web UI
+- desktop UI
+- mobile UI
+- tests for each app
 
-### Shared Route Drift
+That means "add a small feature" can be bigger than it sounds.
 
-The frontend route registry must stay aligned with backend OpenAPI. Source paths:
+## Feature packages
 
-- `aloqa-frontend/packages/core/src/api/routes.ts`
-- `aloqa-backend/shared/api/api-gateway/v1/api-gateway.openapi.yaml`
+Feature packages are organized areas such as:
 
-The registry includes comments for superseded routes and routes that appear to be future-facing or not clearly represented in backend OpenAPI. This should become a CI check, not a manual review task.
+```text
+aloqa-frontend/packages/features/chat/
+aloqa-frontend/packages/features/files/
+aloqa-frontend/packages/features/calls/
+aloqa-frontend/packages/features/search/
+aloqa-frontend/packages/features/settings/
+aloqa-frontend/packages/features/admin/
+```
 
-### Transitional UI Package Shape
+What they are:
 
-Several feature packages still expose platform-specific UI entrypoints. That conflicts with the cleanest reading of ADR-0023. It is acceptable as migration debt, but it should be explicitly tracked.
+Shared feature code for major product areas.
 
-### Multi-Platform Behavior Drift
+Why they exist:
 
-Web, desktop, and mobile can easily diverge in auth storage, realtime reconnection behavior, media behavior, file handling, and error display. The architecture needs shared conformance tests around `packages/core`, plus app-specific smoke tests.
+They keep chat logic near chat code, file logic near file code, and so on.
 
-## Frontend Assessment
+Important note:
 
-The frontend has a strong architectural foundation and serious platform ambition. The main risk is not poor structure; it is keeping that structure true as feature work continues. The web BFF and realtime client deserve special protection because they sit on security and product-critical boundaries.
+Some feature packages still include platform-specific UI exports. The architecture wants more shared logic and less shared UI over time. This is technical debt, not an emergency.
+
+## What screens are affected by common features?
+
+| Feature | Web | Desktop | Mobile |
+|---|---|---|---|
+| Login | auth pages | desktop auth flow | mobile auth routes |
+| Chat | workspace channel pages | renderer chat screens | mobile chat routes |
+| Calls | call pages | desktop call surface | mobile LiveKit/call screens |
+| Files | files pages and upload BFF | desktop file views | mobile files routes |
+| Settings | workspace/user settings | desktop settings | mobile settings |
+| Search | search pages | desktop search | mobile search if implemented |
+
+## Important files
+
+Use these after you understand the frontend story.
+
+```text
+aloqa-frontend/package.json
+aloqa-frontend/AGENTS.md
+aloqa-frontend/apps/web/
+aloqa-frontend/apps/web/app/api/[...path]/route.ts
+aloqa-frontend/apps/web/app/api/upload/[...path]/route.ts
+aloqa-frontend/apps/web/app/api/realtime/ws-ticket/route.ts
+aloqa-frontend/apps/web/src/lib/auth/sessionCookie.ts
+aloqa-frontend/apps/desktop/
+aloqa-frontend/apps/mobile/
+aloqa-frontend/packages/core/src/api/client.ts
+aloqa-frontend/packages/core/src/api/routes.ts
+aloqa-frontend/packages/core/src/realtime/client.ts
+aloqa-frontend/packages/core/src/realtime/events.ts
+aloqa-frontend/docs/adr/
+```
+
+## What can break if frontend changes?
+
+Changing frontend code can break:
+
+- login screens
+- token refresh
+- file uploads
+- WebSocket reconnects
+- mobile navigation
+- desktop calls
+- shared API route names
+- platform-specific UI
+
+Change cost depends on platform count:
+
+```text
+Web only        -> lower cost
+Shared core     -> medium to high cost
+Web + desktop + mobile -> high cost
+Auth or realtime -> high risk
+```
+
+## What you should remember
+
+- The frontend is what users see and click.
+- Aloqa has web, desktop, and mobile apps.
+- The web app has a BFF, which is a safe receptionist for browser requests.
+- Shared logic lives mostly in `packages/core`.
+- Feature packages group product areas like chat, files, calls, and search.
+- Platform-first means each app can have its own UI.
+- A feature may need work in all three apps.
+- Auth, upload, and realtime frontend changes are higher risk.

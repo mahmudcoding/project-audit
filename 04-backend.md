@@ -1,362 +1,354 @@
-# Backend Audit
+# 04. Backend
 
-## Backend Summary
+## What is the backend?
 
-The backend is a Go workspace microservices system under `aloqa-backend`. It provides the durable business logic, API gateway, WebSocket gateway, internal gRPC contracts, database migrations, infrastructure compose files, and production deployment definitions.
+The backend is the trusted part of Aloqa that users do not see directly.
 
-Source paths:
+It:
 
-- `aloqa-backend/go.work`
-- `aloqa-backend/Taskfile.yml`
-- `aloqa-backend/AGENTS.md`
-- `aloqa-backend/shared/api/`
-- `aloqa-backend/shared/proto/`
-- `aloqa-backend/platform/migrations/`
+- checks login
+- stores messages
+- checks permissions
+- manages workspaces and channels
+- stores file records
+- sends notifications
+- creates meeting state
+- talks to the database
+- talks to other infrastructure
 
-The backend architecture is clean/layered by convention:
+Real-life analogy:
 
-- `cmd/main.go` entrypoints
-- `internal/core/app` composition
-- feature packages with transport, service, repository, converter layers
-- `platform` shared libraries
-- `shared` contracts
+The frontend is the customer counter. The backend is the office behind the counter where employees check records, approve requests, and update the warehouse.
 
-Source path: `aloqa-backend/AGENTS.md`.
+## Why does it exist?
 
-## Workspace Modules
+The frontend should not be trusted to decide important things.
 
-The Go workspace includes:
+For example, the frontend can show a "Delete channel" button, but the backend must decide:
 
-- `api-gateway`
-- `auth-service`
-- `file-service`
-- `messaging-service`
-- `notification-service`
-- `org-service`
-- `platform`
-- `realtime-service`
-- `search-service`
-- `shared`
-- `ws-gateway`
+- Is the user logged in?
+- Is the user allowed to delete this channel?
+- Does the channel exist?
+- What database records must change?
+- Should other users be notified?
 
-Source path: `aloqa-backend/go.work`.
+Quick terms used in this chapter:
 
-## Local Development and Operations
+- BFF means Backend for Frontend. It is the web app's helper server layer.
+- Redis means fast short-term memory.
+- Kafka means internal event delivery.
+- WebSocket means a live connection that stays open.
+- MinIO means file object storage.
+- ClamAV means malware scanning for uploaded files.
+- OpenSearch means the search engine.
+- LiveKit means the audio/video meeting system.
 
-`Taskfile.yml` is the operational entrypoint. It includes tasks for:
+## Backend as company departments
 
-- starting core infrastructure
-- running backend services in development
-- generating contracts
-- running migrations
-- installing local tools under `shared/bin`
+Aloqa backend is split into services.
 
-Source path: `aloqa-backend/Taskfile.yml`.
+A service is a separate backend department with one main responsibility.
 
-The README describes local setup around dependency install, environment creation, infrastructure startup, and service development. Source path: `aloqa-backend/README.md`.
+```text
+Auth Service          -> identity and sessions
+Org Service           -> companies, workspaces, channels, roles
+Messaging Service     -> chat and direct messages
+File Service          -> uploads, shares, storage
+Realtime Service      -> meeting rules and room state
+Notification Service  -> email and web notifications
+Search Service        -> search and reindex
+API Gateway           -> reception desk for HTTP requests
+WebSocket Gateway     -> live connection manager
+Platform              -> shared backend tools
+Shared                -> API contracts
+```
 
-## API Gateway
+Where the services live:
 
-The API gateway exposes the HTTP API. It translates HTTP/OpenAPI handler calls into backend gRPC service calls and applies gateway-level concerns such as middleware, auth extraction, cookie behavior, request parsing, and response conversion.
+```text
+aloqa-backend/
+  api-gateway/
+  auth-service/
+  org-service/
+  messaging-service/
+  file-service/
+  realtime-service/
+  notification-service/
+  search-service/
+  ws-gateway/
+  platform/
+  shared/
+```
 
-Source paths:
+## User journey: login
 
-- `aloqa-backend/api-gateway/`
-- `aloqa-backend/shared/api/api-gateway/v1/api-gateway.openapi.yaml`
-- `aloqa-backend/shared/api/api-gateway/v1/paths/`
+```text
+User clicks Login
+  -> frontend sends email and password
+  -> API Gateway receives request
+  -> Auth Service checks user
+  -> database checks password/session records
+  -> Auth Service creates tokens/session
+  -> response goes back to frontend
+```
 
-Important responsibilities:
+Services affected:
 
-- auth endpoints
-- user/profile endpoints
-- company/workspace/channel endpoints
-- messaging endpoints
-- file endpoints
-- meeting endpoints
-- search endpoints
-- notification endpoints
-- admin search reindex endpoint
+- API Gateway
+- Auth Service
+- PostgreSQL
+- Redis, depending on session/cache behavior
+- Web BFF for browser users
 
-The gateway has a large public surface: 160 HTTP operations across 138 OpenAPI path items.
+Important files:
 
-## Auth Service
+```text
+aloqa-backend/api-gateway/
+aloqa-backend/auth-service/
+aloqa-backend/shared/proto/auth/
+aloqa-backend/platform/pkg/utils/auth.go
+```
 
-`auth-service` owns identity and account security:
+## User journey: create a workspace channel
 
-- user registration
+```text
+User clicks Create Channel
+  -> frontend sends channel name
+  -> API Gateway receives request
+  -> Org Service checks workspace permission
+  -> Org Service creates channel
+  -> database stores channel and membership
+  -> channel appears in frontend
+```
+
+Services affected:
+
+- API Gateway
+- Org Service
+- PostgreSQL
+- possibly WebSocket or notification paths if users need updates
+
+Important files:
+
+```text
+aloqa-backend/org-service/
+aloqa-backend/shared/proto/org/
+aloqa-backend/platform/pkg/permissions/
+```
+
+## User journey: send a message
+
+```text
+User clicks Send
+  -> API Gateway receives message
+  -> Messaging Service saves it
+  -> database stores message
+  -> outbox row is created
+  -> Kafka delivers event
+  -> WebSocket Gateway notifies other users
+```
+
+Important term: outbox row.
+
+Plain English:
+
+An outbox row is a saved "task note" in the database. It says, "This message was created; please tell other systems."
+
+Why Aloqa needs it:
+
+If the message saves but Kafka is temporarily unavailable, the note remains in the database and can be sent later.
+
+Important files:
+
+```text
+aloqa-backend/messaging-service/
+aloqa-backend/platform/migrations/20260610000001_messaging_outbox.*
+aloqa-backend/ws-gateway/
+```
+
+## User journey: upload a file
+
+```text
+User chooses file
+  -> frontend sends upload
+  -> API Gateway receives upload
+  -> File Service scans file
+  -> MinIO stores file content
+  -> database stores file metadata
+  -> frontend shows uploaded file
+```
+
+Real-life analogy:
+
+- MinIO is a storage room.
+- Database metadata is the label on each box.
+- ClamAV is a security guard checking files.
+
+Important files:
+
+```text
+aloqa-backend/file-service/
+aloqa-backend/shared/proto/file/
+aloqa-backend/platform/migrations/20260608000003_files.*
+```
+
+## User journey: join a meeting
+
+```text
+User clicks Join
+  -> API Gateway receives request
+  -> Realtime Service checks meeting rules
+  -> database stores participant state
+  -> Redis stores short-term room state
+  -> LiveKit handles audio/video
+  -> WebSocket Gateway sends updates
+```
+
+Important files:
+
+```text
+aloqa-backend/realtime-service/
+aloqa-backend/shared/proto/meeting/
+aloqa-backend/platform/migrations/
+```
+
+## User journey: search
+
+```text
+User types search query
+  -> API Gateway receives request
+  -> Search Service asks OpenSearch
+  -> OpenSearch returns matching records
+  -> frontend shows results
+```
+
+Important files:
+
+```text
+aloqa-backend/search-service/
+aloqa-backend/shared/proto/search/
+```
+
+## What is gRPC?
+
+gRPC is a way for backend services to talk to each other.
+
+Plain English:
+
+If HTTP is how the public front desk receives requests, gRPC is the internal phone system between departments.
+
+Why Aloqa needs it:
+
+The API Gateway can ask the Auth Service, Org Service, Messaging Service, and other services to do work using clear internal contracts.
+
+Where it is defined:
+
+```text
+aloqa-backend/shared/proto/
+```
+
+## What is OpenAPI?
+
+OpenAPI is a written menu of the public HTTP API.
+
+Plain English:
+
+It lists the doors the frontend can knock on.
+
+Example:
+
+```text
+POST /api/v1/auth/login/user
+GET  /api/v1/auth/me
+POST /api/v1/messaging/messages
+```
+
+Why Aloqa needs it:
+
+It helps frontend and backend agree on request paths, request bodies, and responses.
+
+Where it is defined:
+
+```text
+aloqa-backend/shared/api/api-gateway/v1/api-gateway.openapi.yaml
+```
+
+## Important backend files
+
+```text
+aloqa-backend/go.work
+aloqa-backend/Taskfile.yml
+aloqa-backend/README.md
+aloqa-backend/AGENTS.md
+aloqa-backend/shared/api/
+aloqa-backend/shared/proto/
+aloqa-backend/platform/migrations/
+aloqa-backend/deploy/prod/docker-compose.yml
+```
+
+## What can break if backend changes?
+
+Auth changes can break:
+
 - login
-- token refresh
-- logout and logout-all
-- session listing
-- email verification and resend
-- forgot/reset password
-- Google login
-- 2FA enable, confirm, disable, login verification, resend
-- magic link request and verification
-- profile, avatar, settings, and privacy operations where routed through auth/user flows
+- session refresh
+- logout
+- web BFF behavior
+- desktop/mobile login
 
-Source paths:
+Org changes can break:
 
-- `aloqa-backend/auth-service/`
-- `aloqa-backend/shared/proto/auth/`
-- `aloqa-backend/platform/pkg/utils/auth.go`
+- workspace access
+- channel membership
+- roles
+- permissions
+- admin screens
 
-The service uses Postgres for durable user/session state and Redis for cache/session-adjacent behavior. It uses bcrypt for password hashing and JWT helpers in `platform`.
+Messaging changes can break:
 
-## Organization Service
-
-`org-service` owns the organizational model:
-
-- companies
-- workspaces
-- channels
-- members
-- public channel discovery
-- workspace invites
-- company/workspace kicks
-- custom roles
-- role permissions
-- role assignment
-- ABAC permission decisions
-
-Source paths:
-
-- `aloqa-backend/org-service/`
-- `aloqa-backend/org-service/internal/core/abac/`
-- `aloqa-backend/platform/pkg/permissions/`
-- `aloqa-backend/shared/proto/org/`
-
-The organization service is one of the most important correctness boundaries because many later operations depend on membership and permission decisions.
-
-## Messaging Service
-
-`messaging-service` owns chat and direct-message behavior:
-
-- send message
-- list channel messages
-- edit messages
-- delete and restore messages
+- sending messages
+- editing messages
 - reactions
-- pins and pinned lists
-- channel read state and unread count
-- threads and replies
-- direct-message creation, listing, blocking, unblocking, and deletion
-- message forwarding
+- threads
+- live updates
+- unread counts
 
-Source paths:
-
-- `aloqa-backend/messaging-service/`
-- `aloqa-backend/shared/proto/messaging/`
-- `aloqa-backend/platform/migrations/`
-
-Messaging uses an outbox table to publish durable events to Kafka. This is the right pattern for avoiding "database write succeeded but event publish failed" inconsistencies, but it requires idempotent consumers and monitoring.
-
-## File Service
-
-`file-service` owns file upload and file metadata:
+File changes can break:
 
 - upload
-- file URL/content access
-- delete public file
+- download
 - file shares
-- batch share/revoke
-- list user files
-- file metadata
-- storage accounting
-- workspace storage and quota
-- scan/processing integrations
+- quotas
+- malware scanning
 
-Source paths:
+Meeting changes can break:
 
-- `aloqa-backend/file-service/`
-- `aloqa-backend/shared/proto/file/`
-- `aloqa-backend/platform/migrations/`
-
-The service integrates with MinIO, ClamAV, govips, and likely command-line processors such as ffmpeg or Ghostscript based on package and compose references. File systems are security-sensitive because they combine uploads, scanning, permissions, sharing, and download URLs.
-
-## Notification Service
-
-`notification-service` owns email and web notification behavior:
-
-- verification email
-- password reset email
-- 2FA email
-- magic link email
-- web notification creation/listing/read state
-- channel notification mutes
-- Kafka event consumption for message-created-style events
-
-Source paths:
-
-- `aloqa-backend/notification-service/`
-- `aloqa-backend/shared/proto/notification/`
-
-The service uses SMTP/go-mail and integrates with Redis/Kafka paths.
-
-## Realtime Service
-
-`realtime-service` owns meeting domain behavior and LiveKit integration:
-
-- create/update/end meeting
-- active meeting lookup
-- join meeting and token issuance
-- waiting room flows
-- meeting chat
-- replies and threads
-- meeting reactions
-- meeting admins
-- room settings
-- participant permissions
-- device permission requests
-- pin state
-- moderation: mute, kick, ban, unban
-- participants list
+- join flow
+- waiting room
+- LiveKit token
+- call controls
 - breakout rooms
-- breakout chat
-- breakout waiting/join request flows
+- live meeting updates
 
-Source paths:
+## Change cost guide
 
-- `aloqa-backend/realtime-service/`
-- `aloqa-backend/shared/proto/meeting/`
-- `aloqa-backend/platform/migrations/`
+| Change area | Likely cost | Why |
+|---|---:|---|
+| Simple response text | Low | Usually one service and one screen |
+| Add small API field | Medium | Backend, frontend, contracts, tests |
+| Change login/session behavior | High | Security and every platform |
+| Change permissions | High | Many features depend on access checks |
+| Change meeting behavior | High | Database, LiveKit, WebSocket, clients |
+| Change file access | High | Security and storage concerns |
 
-This service is complex enough to deserve its own test plan. Meeting behavior combines persistent state, ephemeral Redis state, WebSocket events, LiveKit state, admin permissions, and user-specific waiting-room flows.
+## What you should remember
 
-## WebSocket Gateway
-
-`ws-gateway` owns persistent WebSocket connections and event fanout:
-
-- authenticating WebSocket clients
-- subscribing/unsubscribing channels and meetings
-- typing events
-- device-state events
-- reaction events
-- ping/pong and room sync
-- Kafka consumers for chat and meeting events
-- Redis pub/sub for user notifications
-- presence and gateway lease behavior
-
-Source paths:
-
-- `aloqa-backend/ws-gateway/`
-- `aloqa-backend/ws-gateway/internal/ws/messages.go`
-- `aloqa-backend/ws-gateway/internal/ws/client.go`
-- `aloqa-backend/shared/proto/presence/`
-
-The WebSocket gateway is a scaling boundary. It must handle reconnects, duplicate subscriptions, auth expiry, sequence/resume behavior, and backpressure.
-
-## Search Service
-
-`search-service` owns OpenSearch-backed search:
-
-- search API
-- admin reindex
-- Kafka consumers for index updates
-
-Source paths:
-
-- `aloqa-backend/search-service/`
-- `aloqa-backend/shared/proto/search/`
-
-Search is operationally separate from source-of-truth Postgres. It should be treated as eventually consistent unless code or product requirements prove otherwise.
-
-## Platform Module
-
-The `platform` module contains shared backend building blocks:
-
-- migrations
-- auth/JWT/password helpers
-- middleware
-- logging
-- database helpers
-- Redis helpers
-- permissions
-- common infrastructure code
-
-Source paths:
-
-- `aloqa-backend/platform/`
-- `aloqa-backend/platform/migrations/`
-- `aloqa-backend/platform/pkg/`
-
-This is a useful shared layer, but it should be protected from becoming a dumping ground. Cross-service abstractions should stay small and stable.
-
-## Shared Contracts
-
-The `shared` module contains source contracts:
-
-- OpenAPI source: `aloqa-backend/shared/api/api-gateway/v1/`
-- protobuf source: `aloqa-backend/shared/proto/`
-
-Generated outputs under `shared/pkg` and tools under `shared/bin` are not manual-read/manual-edit targets according to backend instructions. Source path: `aloqa-backend/AGENTS.md`.
-
-## Backend Deployment
-
-Production compose includes infrastructure and services:
-
-- Postgres
-- Redis
-- MinIO
-- ClamAV
-- OpenSearch
-- Kafka
-- LiveKit
-- migrations
-- notification service
-- auth service
-- org service
-- messaging service
-- realtime service
-- file service
-- search service
-- WebSocket gateway
-- API gateway
-- frontend
-- nginx
-
-Source path: `aloqa-backend/deploy/prod/docker-compose.yml`.
-
-The production nginx routes:
-
-- `/api/v1/` to `api-gateway`
-- `/files/` to `api-gateway`
-- `/docs/` to `api-gateway`
-- exact `/ws` to `ws_gateway/ws/chat`
-- `/` to frontend
-
-Source path: `aloqa-backend/deploy/prod/nginx/nginx.conf`.
-
-This conflicts with the frontend BFF deployment model if that nginx is the browser-facing edge.
-
-## Backend Risks
-
-### Test Coverage
-
-The backend repo instructions say tests are mostly absent except limited logger benchmark coverage. Source path: `aloqa-backend/AGENTS.md`.
-
-For a service surface this broad, that is the biggest backend engineering risk.
-
-### Migration Complexity
-
-The migration list is long and touches core identity, messaging, files, and meetings. Source path: `aloqa-backend/platform/migrations/`.
-
-The meeting subsystem alone has many migration files. Migration ordering, rollback behavior, and production data compatibility need careful process.
-
-### Security-Critical Flows
-
-Auth, permissions, file access, WebSocket auth, meeting moderation, invite links, and storage quotas are security-sensitive. These need tests beyond unit coverage.
-
-### Operational Ambiguity
-
-Compose files describe a single-host deployment style, but I cannot determine actual production topology, secrets handling, backup policy, or observability coverage from the codebase alone.
-
-### Minor Compose Risk
-
-The backend production compose contains a duplicate `POSTGRES_HOST: postgres` line in the `messaging-service` environment. Source path: `aloqa-backend/deploy/prod/docker-compose.yml`.
-
-This is probably harmless YAML override behavior, but it signals that deployment files need linting.
-
-## Backend Assessment
-
-The backend has a coherent microservice architecture and a substantial feature implementation. The biggest gap is verification. The next engineering investment should be integration tests and contract tests around auth, permissions, chat, files, meetings, and realtime fanout.
+- The backend is the trusted work area behind the frontend.
+- The API Gateway is the public backend reception desk.
+- Backend services are separate departments.
+- gRPC is the internal phone system between services.
+- OpenAPI is the written menu of public HTTP routes.
+- PostgreSQL stores long-term truth.
+- Kafka helps services tell each other about events.
+- Auth, permissions, files, and meetings are high-risk backend areas.
+- Backend test coverage appears thin, so changes need care.

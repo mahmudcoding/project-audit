@@ -1,162 +1,366 @@
-# Executive Summary
+# 01. Executive Summary
 
-## What Aloqa Is
+## What is Aloqa?
 
-Aloqa is a Slack-like collaboration platform with chat, workspaces, companies, channels, direct messages, files, search, notifications, and a large video-meeting subsystem. It is implemented as two coordinated monorepos under `/Users/mahmud/Projects/aloqa`:
+Aloqa is a workplace communication product.
 
-- Backend: `aloqa-backend`, a Go workspace of microservices behind an API gateway and WebSocket gateway.
-- Frontend: `aloqa-frontend`, a platform-first TypeScript monorepo for web, desktop, and mobile clients.
+It helps people in a company:
 
-The backend owns persistence, contracts, business rules, service-to-service gRPC, WebSocket fanout, Kafka outbox pipelines, LiveKit integration, and production infrastructure. The frontend owns platform clients, user workflows, design systems, web BFF behavior, client-side state, offline/mobile concerns, and release checks.
+- log in securely
+- create workspaces
+- create channels
+- send messages
+- send direct messages
+- upload files
+- search old content
+- receive notifications
+- join video meetings
+- manage members, roles, and permissions
 
-Important source paths:
+If you know Slack, Microsoft Teams, or Discord for work, Aloqa is in the same product family.
 
-- `aloqa-backend/go.work`
-- `aloqa-backend/Taskfile.yml`
-- `aloqa-backend/shared/api/api-gateway/v1/api-gateway.openapi.yaml`
-- `aloqa-backend/shared/proto/`
-- `aloqa-backend/platform/migrations/`
-- `aloqa-frontend/AGENTS.md`
-- `aloqa-frontend/apps/`
-- `aloqa-frontend/packages/`
-- `aloqa-frontend/docs/adr/`
+## What problem does it solve?
 
-## Current Engineering Shape
+Companies need one place where employees can work together.
 
-The project is well beyond a prototype. It has:
+Without a tool like Aloqa, work spreads across:
 
-- A multi-service backend workspace with auth, organization, messaging, file, notification, realtime, search, API gateway, and WebSocket gateway services.
-- A broad HTTP contract with 160 OpenAPI operations across 138 path items.
-- gRPC contracts for auth, organization, messaging, files, meetings, notifications, presence, and search.
-- A substantial PostgreSQL schema with identity, workspace, role, channel, message, file, meeting, breakout-room, notification, outbox, and moderation tables.
-- A frontend architecture that deliberately separates headless feature logic from platform-owned UI.
-- Web, desktop, and mobile app surfaces with separate runtime assumptions.
-- Production compose and nginx files in both repos.
+- email
+- private chats
+- video-call links
+- shared drives
+- screenshots
+- spreadsheets
+- manual permission lists
 
-At the same time, it has the risk profile of a fast-moving product whose surface area has grown faster than verification and deployment consolidation:
+Aloqa tries to bring these into one connected system.
 
-- Backend test coverage appears thin compared with the number of services and migrations.
-- Frontend architecture docs are stronger than parts of the legacy package shape, especially where feature packages still expose `ui-web`, `ui-desktop`, and `ui-mobile`.
-- The backend and frontend disagree in important places about who owns production edge routing for `/api/*`.
-- Auth is split across backend cookies and frontend BFF sealed sessions. This is reasonable, but subtle.
-- Realtime depends on multiple systems staying aligned: Postgres outbox, Kafka, WebSocket gateway, Redis state, LiveKit, and frontend event mapping.
+## Who uses it?
 
-## Main Strengths
+Different people use Aloqa for different reasons:
 
-The backend has clear service separation. The Go workspace includes independent modules for gateway, auth, organization, messaging, files, notifications, realtime, search, platform, shared contracts, and WebSocket gateway. Source paths: `aloqa-backend/go.work`, `aloqa-backend/*/go.mod`.
+| Person | What they need |
+|---|---|
+| Employee | Send messages, join meetings, upload files, search information |
+| Team lead | Create channels, manage members, start meetings |
+| Company admin | Manage workspaces, roles, permissions, storage |
+| Support or operations team | See notifications, search history, manage access |
+| Product manager | Plan features and understand what changes affect |
+| Engineer | Build, fix, and operate the system |
 
-The contract-first backend foundation is strong. HTTP routes come from OpenAPI files under `aloqa-backend/shared/api/api-gateway/v1/`, while internal service contracts are under `aloqa-backend/shared/proto/`. Generated code is intentionally excluded from manual editing by `aloqa-backend/AGENTS.md`.
+## Imagine one company using Aloqa for one day
 
-The frontend has a serious architecture model. ADR-0023 defines "reuse logic, not UI", and ADR-0037 defines the web BFF. Source paths: `aloqa-frontend/docs/adr/0023-platform-first-architecture.md`, `aloqa-frontend/docs/adr/0037-web-bff-backend-session.md`.
+### Morning
 
-The data model covers real collaboration-product complexity. The migrations under `aloqa-backend/platform/migrations/` include users, sessions, companies, workspaces, channels, messages, files, custom roles, ABAC permissions, direct messages, meeting chat, meeting admins, room settings, device requests, breakout rooms, waiting rooms, bans, and outbox tables.
+An employee opens Aloqa.
 
-The project has operational thinking. There are local Taskfile workflows, production compose files, release CI/CD docs, smoke scripts, and nginx configurations. Source paths: `aloqa-backend/Taskfile.yml`, `aloqa-backend/deploy/prod/docker-compose.yml`, `aloqa-frontend/docs/CICD.md`, `aloqa-frontend/deploy/smoke-live.sh`.
+```text
+Employee
+  -> opens web, desktop, or mobile app
+  -> clicks Login
+  -> enters email and password
+  -> sees workspace list
+```
 
-## Highest Risks
+Behind the scenes:
 
-### 1. Edge Routing Drift
+```text
+Frontend screen
+  -> login request
+  -> backend checks password
+  -> database checks user and session
+  -> frontend receives success
+```
 
-The frontend architecture says browser REST traffic should go through the Next.js BFF under `/api/*`, where the BFF manages a sealed `aloqa_bff_session` cookie and forwards backend `access_token` cookies server-side. Source paths: `aloqa-frontend/docs/adr/0037-web-bff-backend-session.md`, `aloqa-frontend/apps/web/app/api/[...path]/route.ts`.
+Why this matters for a PM:
 
-The backend production nginx file routes `/api/v1/` directly to `api-gateway`. Source path: `aloqa-backend/deploy/prod/nginx/nginx.conf`.
+- Login must be reliable.
+- If login breaks, every other feature becomes unreachable.
+- Auth changes affect web, desktop, mobile, backend, and database sessions.
 
-The frontend production nginx file routes `/api/*` to the web app. Source path: `aloqa-frontend/deploy/nginx.prod.conf`.
+### Mid-morning
 
-This is the most important deployment ambiguity. I cannot determine from the codebase which nginx file is the actual production edge today. If the backend nginx file is active for browser traffic, it can bypass the frontend BFF model for `/api/v1/*`.
+The employee sends a message in a channel.
 
-### 2. Backend Verification Gap
+```text
+Employee types message
+  -> clicks Send
+  -> message appears
+  -> teammates see it live
+```
 
-The backend has many services and a very large data model, but its own repository instructions note that tests are mostly absent except limited logger benchmarking. Source path: `aloqa-backend/AGENTS.md`.
+Behind the scenes:
 
-Given the number of auth, permission, realtime, file, and meeting workflows, this is a high-severity maintenance risk.
+```text
+Frontend
+  -> API Gateway
+  -> Messaging Service
+  -> Database
+  -> Kafka event delivery
+  -> WebSocket Gateway
+  -> other users receive update
+```
 
-### 3. Contract and Implementation Drift
+Real-life analogy:
 
-There are three contract layers:
+- The database is the warehouse where the message is stored.
+- Kafka is like an internal mail service that delivers "new message" notices.
+- WebSocket is like a phone call that stays open so updates arrive instantly.
 
-- HTTP OpenAPI in `aloqa-backend/shared/api/api-gateway/v1/`
-- gRPC proto files in `aloqa-backend/shared/proto/`
-- Frontend API route registry in `aloqa-frontend/packages/core/src/api/routes.ts`
+### Noon
 
-This is a good design, but it requires active drift checks. The frontend route registry includes comments for superseded routes and feature areas that may not be fully represented in the backend OpenAPI. That means product work can accidentally proceed in UI before backend support exists, or backend routes can change without client updates.
+The team joins a meeting.
 
-### 4. Realtime Complexity
+```text
+User clicks Join Meeting
+  -> backend checks permission
+  -> meeting service prepares room state
+  -> LiveKit handles audio and video
+  -> WebSocket sends meeting updates
+```
 
-Chat and meetings use a multi-hop realtime path:
+Why this matters:
 
-1. HTTP or gRPC command writes to Postgres.
-2. Service writes an outbox row.
-3. Relay publishes Kafka events.
-4. WebSocket gateway consumes events.
-5. WebSocket gateway fans out to channel or meeting subscribers.
-6. Redis stores room, presence, typing, reaction, or notification state.
-7. Frontend realtime client normalizes backend event frames.
+- Meetings are more complex than normal messages.
+- They involve permissions, live video, waiting rooms, device requests, and realtime updates.
+- This is an expensive area to modify.
 
-Source paths: `aloqa-backend/messaging-service/`, `aloqa-backend/realtime-service/`, `aloqa-backend/ws-gateway/`, `aloqa-backend/platform/migrations/`, `aloqa-frontend/packages/core/src/realtime/`.
+### Afternoon
 
-This architecture can scale, but it needs integration tests, event versioning, idempotency rules, and operational visibility.
+Someone uploads a file.
 
-### 5. Documentation Drift
+```text
+User selects file
+  -> frontend sends upload
+  -> backend scans file
+  -> backend stores file in MinIO
+  -> database stores file metadata
+  -> other users can access it if allowed
+```
 
-Some repository guidance appears older than current implementation. For example, backend guidance still references earlier stub-service status, while the inspected repo contains implemented file, messaging, notification, realtime, search, and WebSocket services. Source paths: `aloqa-backend/AGENTS.md`, `aloqa-backend/file-service/`, `aloqa-backend/messaging-service/`, `aloqa-backend/realtime-service/`, `aloqa-backend/search-service/`, `aloqa-backend/ws-gateway/`.
+Real-life analogy:
 
-Documentation drift is not cosmetic here. It can cause engineers to make wrong architecture or release decisions.
+- MinIO is the storage room for file contents.
+- The database stores the label on the box: owner, file name, permissions, size, and status.
+- ClamAV is the security guard that checks the file for malware.
 
-## Recommended Priorities
+### Evening
 
-### Priority 1: Decide and Document the Production Edge
+The user searches for an old message and logs out.
 
-Choose one authoritative edge-routing model:
+```text
+User searches
+  -> Search Service asks OpenSearch
+  -> results return
 
-- Preferred for the frontend architecture: browser `/api/*` goes to Next.js BFF; direct backend routes remain internal or service-to-service.
-- WebSocket `/ws/chat` goes to `ws-gateway`.
-- LiveKit traffic goes to LiveKit.
-- File download behavior is explicitly documented as BFF-proxied or gateway-direct.
+User logs out
+  -> Auth Service closes session
+  -> frontend returns to login state
+```
 
-Then update one deployment path so backend and frontend nginx definitions cannot diverge.
+## The big architecture in one picture
 
-### Priority 2: Add Contract Drift Checks
+```text
+Users
+  |
+  v
+Frontend apps
+  |-- Web app
+  |-- Desktop app
+  |-- Mobile app
+  |
+  v
+API Gateway and WebSocket Gateway
+  |
+  v
+Backend services
+  |-- Auth
+  |-- Organization
+  |-- Messaging
+  |-- Files
+  |-- Meetings
+  |-- Notifications
+  |-- Search
+  |
+  v
+Storage and infrastructure
+  |-- PostgreSQL database
+  |-- Redis short-term memory
+  |-- Kafka delivery service
+  |-- MinIO file storage
+  |-- OpenSearch search index
+  |-- LiveKit video/audio
+```
 
-Add automated checks that compare:
+## The most important things to know first
 
-- OpenAPI paths in `aloqa-backend/shared/api/api-gateway/v1/`
-- frontend route builders in `aloqa-frontend/packages/core/src/api/routes.ts`
-- generated clients or BFF assumptions
+### 1. Aloqa is two projects working together
 
-This should fail CI when frontend references a backend path that is not in the OpenAPI contract, unless the route is intentionally marked as planned or app-local.
+The frontend project is here:
 
-### Priority 3: Build Backend Integration Tests Around Core Workflows
+```text
+aloqa-frontend/
+```
 
-The first backend tests should cover high-risk flows:
+The backend project is here:
 
-- register, login, refresh, logout
-- company/workspace/channel creation with permissions
-- send message and receive WebSocket event
-- file upload, scan, metadata, share, revoke
-- meeting join, waiting room, admin permission, LiveKit token
-- outbox relay idempotency
+```text
+aloqa-backend/
+```
 
-### Priority 4: Stabilize Realtime Event Contracts
+The frontend cannot do much alone. It needs backend services to store data, check permissions, and send realtime updates.
 
-Document versioned event schemas for chat, notification, meeting, breakout, device, typing, pin, and reaction events. The frontend already has event mappings in `aloqa-frontend/packages/core/src/realtime/events.ts`; backend producers should be tested against that map.
+### 2. The backend is split into departments
 
-### Priority 5: Reduce Legacy Frontend UI Package Exports
+A backend "microservice" means a separate backend department.
 
-ADR-0023 says feature packages should be headless and app UI should be app-owned. Several packages still export platform UI entrypoints. Keep the rule, but migrate package by package rather than attempting a broad rewrite.
+Example:
 
-## What I Cannot Determine From Code Alone
+- Auth Service handles login.
+- Messaging Service handles messages.
+- File Service handles files.
+- Search Service handles search.
 
-I cannot determine the live production edge routing without server inspection.
+Why this project needs it:
 
-I cannot determine production traffic volume, SLOs, alert coverage, or actual incident history from the repository.
+- The product has many complex areas.
+- Separate services keep responsibilities clearer.
+- A bug in one area is easier to locate.
 
-I cannot determine whether every OpenAPI operation has a fully exercised frontend user flow.
+Where it is used:
 
-I cannot determine whether Kafka, Redis, MinIO, OpenSearch, ClamAV, and LiveKit are hardened in the actual production environment beyond what compose files describe.
+```text
+aloqa-backend/auth-service/
+aloqa-backend/messaging-service/
+aloqa-backend/file-service/
+aloqa-backend/search-service/
+```
 
-I cannot determine whether all migrations have been applied to production successfully.
+### 3. The web app uses a BFF
 
-## Bottom Line
+BFF means "Backend for Frontend."
 
-Aloqa has a serious product architecture and a broad implemented feature surface. The main engineering problem is no longer "can this be built"; it is "can this be safely evolved." The next phase should focus on deployment ownership, contract drift prevention, backend integration coverage, and realtime observability.
+Plain English:
+
+The browser does not send most requests straight to the backend. It first talks to a small server layer inside the web app.
+
+Analogy:
+
+The BFF is a receptionist.
+
+```text
+Browser
+  -> BFF receptionist
+  -> backend service desk
+```
+
+Why Aloqa needs it:
+
+- It keeps sensitive login tokens safer.
+- It lets the web app refresh login state without exposing everything to browser code.
+- It gives one place to check browser request safety.
+
+Where it is used:
+
+```text
+aloqa-frontend/apps/web/app/api/
+aloqa-frontend/apps/web/src/lib/auth/
+```
+
+### 4. Realtime is a core feature, not a bonus
+
+Messages, notifications, and meeting updates should appear quickly.
+
+That means Aloqa uses:
+
+- WebSocket for always-open client connections
+- Kafka for backend event delivery
+- Redis for short-term state
+- LiveKit for meeting audio/video
+
+## Main strengths
+
+- The project has a real product structure, not just demo code.
+- Backend services have clear responsibilities.
+- Frontend has separate web, desktop, and mobile apps.
+- API contracts are written down.
+- The database model covers many real collaboration features.
+- The web app has a thoughtful login/security design.
+
+## Main risks
+
+### Risk 1: Production routing is unclear
+
+One frontend deployment file says browser API traffic should go to the web BFF.
+
+One backend deployment file sends `/api/v1/` traffic directly to the backend gateway.
+
+Important files:
+
+```text
+aloqa-frontend/deploy/nginx.prod.conf
+aloqa-backend/deploy/prod/nginx/nginx.conf
+```
+
+Why a PM should care:
+
+If the wrong route is active in production, login and security behavior may not match the design.
+
+I cannot determine from the codebase which nginx file is the real production edge today.
+
+### Risk 2: Backend tests look too thin
+
+The backend has many services, but the backend guidance says tests are mostly absent except limited benchmark coverage.
+
+Important file:
+
+```text
+aloqa-backend/AGENTS.md
+```
+
+Why a PM should care:
+
+When a product has login, permissions, messaging, files, and meetings, missing tests can turn small changes into risky changes.
+
+### Risk 3: Realtime has many moving parts
+
+A message can pass through:
+
+```text
+Frontend
+  -> API Gateway
+  -> Messaging Service
+  -> Database
+  -> Kafka
+  -> WebSocket Gateway
+  -> other users
+```
+
+If one part breaks, the message may save correctly but not appear live.
+
+### Risk 4: Meetings are expensive to change
+
+Meetings touch:
+
+- backend meeting service
+- LiveKit
+- WebSocket events
+- Redis room state
+- database tables
+- frontend call screens
+- mobile and desktop behavior
+
+Changing meeting behavior is likely expensive.
+
+## What you should remember
+
+- Aloqa is a workplace communication platform.
+- Users log in, chat, meet, upload files, search, and receive notifications.
+- The frontend shows screens; the backend does the trusted work.
+- The backend is split into service departments.
+- The database stores the long-term truth.
+- Redis is short-term memory.
+- Kafka is internal delivery.
+- WebSocket is a live phone line to users.
+- LiveKit handles video and audio calls.
+- The biggest risks are routing clarity, backend test coverage, and realtime complexity.

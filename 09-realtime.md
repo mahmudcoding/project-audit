@@ -1,247 +1,291 @@
-# Realtime Audit
+# 09. Realtime
 
-## Realtime Summary
+## What does realtime mean?
 
-Aloqa realtime behavior is split between:
+Realtime means users see updates quickly without refreshing the page.
 
-- WebSocket gateway for product events.
-- LiveKit for audio/video media.
-- Kafka/outbox for durable backend event propagation.
-- Redis for ephemeral room, presence, typing, notification, and coordination state.
+Examples:
 
-Source paths:
+- a new message appears
+- someone is typing
+- a notification arrives
+- a meeting participant joins
+- a host mutes someone
+- a breakout room changes
 
-- `aloqa-backend/ws-gateway/`
-- `aloqa-backend/realtime-service/`
-- `aloqa-backend/messaging-service/`
-- `aloqa-backend/platform/migrations/`
-- `aloqa-frontend/packages/core/src/realtime/client.ts`
-- `aloqa-frontend/packages/core/src/realtime/events.ts`
-- `aloqa-frontend/docs/adr/0022-livekit-client-sdk.md`
+Real-life analogy:
 
-## WebSocket Gateway
+Normal API requests are like sending letters.
 
-`ws-gateway` owns persistent WebSocket connections and event fanout.
+Realtime is like staying on a phone call.
 
-Responsibilities:
+```text
+Letter:
+User asks -> server replies -> connection ends
 
-- authenticate socket clients
-- handle subscribe/unsubscribe messages
-- manage channel and meeting subscriptions
-- process typing events
-- process device-state events
-- process reactions
-- publish room sync behavior
-- consume Kafka events
-- fan out chat and meeting updates
-- deliver user-specific notifications through Redis pub/sub
-- coordinate presence/gateway leases
+Phone call:
+User connects -> connection stays open -> updates arrive anytime
+```
 
-Source paths:
+## Why does Aloqa need realtime?
 
-- `aloqa-backend/ws-gateway/internal/ws/messages.go`
-- `aloqa-backend/ws-gateway/internal/ws/client.go`
-- `aloqa-backend/ws-gateway/`
+Aloqa is a collaboration product.
 
-## Client WebSocket Protocol
+Users expect live behavior:
 
-The backend WebSocket message definitions include channel and meeting subscription messages, typing, device state, reactions, ping/pong-style behavior, and room sync behavior.
+- chat should update immediately
+- meetings should show participant changes
+- notifications should appear without reload
+- typing indicators should feel instant
 
-Source paths:
+Without realtime, Aloqa would feel slow and outdated.
 
-- `aloqa-backend/ws-gateway/internal/ws/messages.go`
-- `aloqa-backend/ws-gateway/internal/ws/client.go`
+## The main realtime parts
 
-The frontend client maps logical rooms such as chat channels and meetings into backend subscription payloads. Source path: `aloqa-frontend/packages/core/src/realtime/events.ts`.
+```text
+Frontend realtime client
+  -> WebSocket Gateway
+  -> Kafka events
+  -> backend services
+  -> Redis short-term state
+  -> LiveKit for audio/video
+```
 
-## Frontend Realtime Client
+## What is WebSocket?
 
-The frontend realtime client supports:
+WebSocket is a connection that stays open between client and server.
 
-- idempotent connect
-- token injection/refresh hooks
-- reconnect with exponential backoff and jitter
-- heartbeat every configured interval
-- missed pong handling
-- resume key and resume sequence support
-- both envelope-style and flat backend frames
+Analogy:
 
-Source path: `aloqa-frontend/packages/core/src/realtime/client.ts`.
+It is a phone call that stays connected.
 
-This is a good baseline for production realtime clients. The next step is validating it against backend behavior under network failure, token expiry, and backend restart scenarios.
+Why Aloqa needs it:
 
-## Event Families
+The backend can push updates to the user instead of waiting for the user to refresh.
 
-Frontend event names cover:
+Where it is used:
 
-- message created, edited, deleted, restored
-- reaction updates
-- typing
-- notifications
-- meeting updates
-- breakout room updates
-- waiting room updates
-- room settings
-- pin updates
-- admin updates
-- device requests and device state
+```text
+aloqa-backend/ws-gateway/
+aloqa-frontend/packages/core/src/realtime/client.ts
+```
 
-Source path: `aloqa-frontend/packages/core/src/realtime/events.ts`.
+## What is the WebSocket Gateway?
 
-Backend producers live across:
+The WebSocket Gateway is the backend service that manages live connections.
 
-- `aloqa-backend/messaging-service/`
-- `aloqa-backend/realtime-service/`
-- `aloqa-backend/ws-gateway/`
+What it does:
 
-The event map should become a versioned contract.
+- accepts user socket connections
+- checks who the user is
+- subscribes users to channels or meetings
+- receives Kafka events
+- sends events to the right users
 
-## Chat Realtime Flow
+Real-life analogy:
 
-Expected flow:
+It is a phone switchboard operator. It keeps track of who is connected and sends the right call updates to the right people.
 
-1. Client sends a message through HTTP API.
-2. API gateway calls `messaging-service`.
-3. Messaging service writes message data to Postgres.
-4. Messaging service writes an outbox event.
-5. Outbox relay publishes to Kafka.
-6. WebSocket gateway consumes the Kafka event.
-7. WebSocket gateway sends event to subscribed channel clients.
-8. Frontend realtime client normalizes and dispatches event to app bridges.
+Where it is used:
 
-Source paths:
+```text
+aloqa-backend/ws-gateway/
+```
 
-- `aloqa-backend/messaging-service/`
-- `aloqa-backend/platform/migrations/20260610000001_messaging_outbox.*`
-- `aloqa-backend/ws-gateway/`
-- `aloqa-frontend/packages/core/src/realtime/bridges.ts`
+## What is Kafka in realtime?
 
-## Meeting Realtime Flow
+Kafka is the internal delivery service.
 
-Expected flow:
+Analogy:
 
-1. Client creates, joins, or updates meeting state through HTTP API.
-2. API gateway calls meeting/realtime gRPC service.
-3. Realtime service persists meeting state in Postgres.
-4. Realtime service writes meeting outbox rows and/or Redis state.
-5. Kafka carries durable meeting events.
-6. WebSocket gateway fans out meeting state updates.
-7. LiveKit handles media-plane audio/video.
-8. Frontend call UI responds to WebSocket state and LiveKit state.
+Kafka is the company mailroom.
 
-Source paths:
+Example:
 
-- `aloqa-backend/realtime-service/`
-- `aloqa-backend/platform/migrations/20260622085254_meeting_outbox.*`
-- `aloqa-backend/ws-gateway/`
-- `aloqa-frontend/packages/features/calls/`
-- `aloqa-frontend/docs/adr/0022-livekit-client-sdk.md`
+```text
+Messaging Service saves a message
+  -> drops an event into Kafka
+  -> WebSocket Gateway picks it up
+  -> users receive live update
+```
 
-## LiveKit
+Why Aloqa needs it:
 
-The frontend architecture explicitly chooses LiveKit Client SDK for WebRTC. Source path: `aloqa-frontend/docs/adr/0022-livekit-client-sdk.md`.
+Backend services should not all directly call each other for every live event. Kafka lets events move through the system in a more reliable way.
 
-The backend production compose includes LiveKit. Source path: `aloqa-backend/deploy/prod/docker-compose.yml`.
+## What is Redis in realtime?
 
-The realtime service uses LiveKit server-side dependencies and issues meeting/media behavior. Source path: `aloqa-backend/realtime-service/`.
+Redis is short-term memory.
 
-This is the correct decision. Custom WebRTC signaling/media infrastructure would be much riskier.
+Analogy:
 
-## Redis Realtime State
+It is a whiteboard in a meeting room.
 
-Redis stores ephemeral meeting and presence state such as:
+It can store:
 
-- room state
-- pin state
-- online users
-- participant state
-- typing state
-- presence
-- reaction limit state
+- who is online right now
+- who is typing right now
+- current room state
+- temporary reaction limits
+- notification delivery state
 
-Source path: `aloqa-backend/realtime-service/internal/infrastructure/redis/room_state.go`.
+Where it is used:
 
-Redis is also used by the WebSocket gateway for user-specific notification pub/sub such as `notif:<userID>` style channels.
+```text
+aloqa-backend/realtime-service/internal/infrastructure/redis/
+aloqa-backend/ws-gateway/
+```
 
-Redis should not be the only source of truth for durable meeting history.
+## What is LiveKit?
 
-## Outbox and Kafka
+LiveKit handles audio and video.
 
-Realtime fanout relies on durable outbox tables:
+Analogy:
 
-- `messaging_outbox`
-- `meeting_outbox`
-- `channels_outbox`
+WebSocket is the meeting status phone line. LiveKit is the actual conference room with microphones and cameras.
 
-Source paths:
+Why Aloqa needs it:
 
-- `aloqa-backend/platform/migrations/20260610000001_messaging_outbox.*`
-- `aloqa-backend/platform/migrations/20260612000001_channels_outbox.*`
-- `aloqa-backend/platform/migrations/20260622085254_meeting_outbox.*`
+Video/audio is hard to build correctly. Aloqa uses LiveKit for media, while Aloqa backend handles product rules like permissions, waiting rooms, and admins.
 
-Kafka carries events from services to consumers such as WebSocket gateway and search.
+Where it is used:
 
-The outbox pattern is strong, but operationally it needs:
+```text
+aloqa-backend/realtime-service/
+aloqa-frontend/docs/adr/0022-livekit-client-sdk.md
+```
 
-- retry visibility
-- duplicate handling
-- dead-letter handling
-- event schema versioning
-- consumer lag alerts
+## User journey: live chat message
 
-## Realtime Risks
+```text
+1. Alice sends a message.
+2. Messaging Service saves it.
+3. Messaging Service creates an event.
+4. Kafka carries the event.
+5. WebSocket Gateway receives it.
+6. Bob's browser already has a WebSocket connection open.
+7. Bob sees the message appear.
+```
 
-### Event Contract Drift
+Diagram:
 
-Backend event producers and frontend event names can drift. Source paths:
+```text
+Alice
+  -> API Gateway
+  -> Messaging Service
+  -> Database
+  -> Kafka
+  -> WebSocket Gateway
+  -> Bob
+```
 
-- `aloqa-backend/ws-gateway/`
-- `aloqa-frontend/packages/core/src/realtime/events.ts`
+## User journey: typing indicator
 
-This should be caught with contract tests.
+```text
+Alice starts typing
+  -> frontend sends typing event
+  -> WebSocket Gateway receives it
+  -> Redis may store short-term typing state
+  -> Bob sees "Alice is typing"
+```
 
-### Duplicate Events
+This state is short-lived. It does not need to be stored forever.
 
-Outbox/Kafka systems can deliver duplicate events. Clients and consumers should be idempotent where possible.
+## User journey: meeting update
 
-The frontend realtime client supports resume sequence concepts, but I cannot determine from static inspection whether every backend event has stable sequencing semantics.
+```text
+Host mutes a participant
+  -> frontend sends request
+  -> Realtime Service checks permission
+  -> database stores meeting state
+  -> Redis stores room state
+  -> Kafka/WebSocket sends update
+  -> meeting screens update
+```
 
-### Reconnect and Auth Expiry
+Affected systems:
 
-Realtime clients must survive token expiry, network loss, server restarts, and duplicate subscriptions. The frontend client has reconnect support, but end-to-end tests are needed against `ws-gateway`.
+```text
+realtime-service
+ws-gateway
+Redis
+Kafka
+LiveKit
+frontend calls package
+```
 
-### Meeting State Complexity
+## Frontend realtime client
 
-Meetings combine:
+The frontend has a shared realtime client.
 
-- Postgres durable state
-- Redis room state
-- WebSocket events
-- LiveKit state
-- role/admin permissions
-- waiting rooms
-- breakout rooms
+What it does:
 
-That is a lot of state to keep consistent.
+- connects to WebSocket
+- reconnects after network problems
+- sends heartbeat checks
+- gets a new token when needed
+- receives backend events
+- sends events to app screens
 
-## Recommended Realtime Tests
+Where it is used:
 
-Add tests for:
+```text
+aloqa-frontend/packages/core/src/realtime/client.ts
+aloqa-frontend/packages/core/src/realtime/events.ts
+aloqa-frontend/packages/core/src/realtime/bridges.ts
+```
 
-- socket connect with valid token
-- socket reject with invalid token
-- subscribe/unsubscribe channel
-- message event delivered once or idempotently handled
-- reconnect and resume after network drop
-- token refresh during reconnect
-- meeting join and room sync
-- waiting room admit/reject
-- meeting admin permission update
-- device request accept/decline
-- breakout room create/join/close
-- duplicate Kafka event handling
-- Redis restart behavior where acceptable
+## What can break in realtime?
 
-## Realtime Assessment
+Realtime can fail in partial ways.
 
-The realtime architecture is appropriate for the product, but it is operationally sensitive. The next maturity step is event schema versioning, integration tests, and observability for outbox, Kafka, WebSocket fanout, Redis room state, and LiveKit joins.
+Examples:
+
+- message saves but does not appear live
+- user receives duplicate event
+- meeting state updates late
+- WebSocket reconnect fails
+- token expires during a socket connection
+- Kafka event is delayed
+- Redis loses temporary state
+- mobile reconnect behavior differs from web
+
+## Change cost guide
+
+| Change | Cost | Why |
+|---|---:|---|
+| Add simple event display | Medium | frontend and backend event must match |
+| Change event name | High | can break all clients |
+| Change reconnect behavior | High | affects reliability |
+| Change meeting realtime | High | many systems involved |
+| Change LiveKit behavior | High | media, backend, clients, permissions |
+
+## Important files
+
+```text
+aloqa-backend/ws-gateway/
+aloqa-backend/ws-gateway/internal/ws/messages.go
+aloqa-backend/ws-gateway/internal/ws/client.go
+aloqa-backend/messaging-service/
+aloqa-backend/realtime-service/
+aloqa-backend/platform/migrations/20260610000001_messaging_outbox.*
+aloqa-backend/platform/migrations/20260622085254_meeting_outbox.*
+aloqa-frontend/packages/core/src/realtime/client.ts
+aloqa-frontend/packages/core/src/realtime/events.ts
+```
+
+## Unknowns from code alone
+
+The frontend has resume-related logic, but I cannot prove from static inspection that every backend event has complete sequencing and resume behavior.
+
+## What you should remember
+
+- Realtime means users see updates without refreshing.
+- WebSocket is a phone call that stays open.
+- WebSocket Gateway manages live client connections.
+- Kafka is the internal mailroom for events.
+- Redis is short-term memory for live state.
+- LiveKit handles audio and video.
+- Chat and meetings depend heavily on realtime.
+- Realtime failures can be partial and hard to notice.
+- Event changes should be treated as high risk.

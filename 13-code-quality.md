@@ -1,192 +1,238 @@
-# Code Quality Audit
+# 13. Code Quality
 
-## Quality Summary
+## What does code quality mean here?
 
-Aloqa has strong architectural intent and significant implemented functionality. The codebase shows deliberate separation of services, contracts, platform clients, and shared logic.
+Code quality means how safe and easy the system is to change.
 
-The main quality concern is verification depth. The surface area is large enough that manual testing and code review alone are not enough.
+It is not only about whether code looks clean.
 
-## Strengths
+For Aloqa, quality means:
 
-### Clear Backend Service Boundaries
+- can engineers understand where a feature lives?
+- can tests catch mistakes?
+- do frontend and backend contracts match?
+- can deployment be trusted?
+- can bugs be found quickly?
+- can a small change avoid breaking unrelated features?
 
-The backend is split into modules for gateway, auth, organization, messaging, files, notifications, realtime, search, platform, shared contracts, and WebSocket gateway.
+## Why PMs should care
 
-Source path: `aloqa-backend/go.work`.
+Quality affects planning.
 
-This makes ownership and deployment boundaries easier to reason about than a single large backend binary.
+Bad quality turns small work into risky work.
 
-### Contract Sources Are Centralized
+Good quality makes estimates more reliable.
 
-HTTP OpenAPI and gRPC protobuf sources live in dedicated shared directories.
+Quick terms used in this chapter:
 
-Source paths:
+- Kafka means internal event delivery.
+- WebSocket means a live connection that stays open.
+- OpenAPI means the written public HTTP API menu.
+- Protobuf means a written contract for backend service messages.
+- ADR means Architecture Decision Record, a note explaining an architecture choice.
+- BFF means Backend for Frontend, the web app's helper server layer.
+- Redis means fast short-term memory.
+- Outbox means a database tray of events to send later.
 
-- `aloqa-backend/shared/api/api-gateway/v1/`
-- `aloqa-backend/shared/proto/`
+Example:
 
-This is a strong foundation for generated clients and contract tests.
+```text
+Change button text
+  -> likely low risk
 
-### Frontend Architecture Is Documented
+Change message delivery flow
+  -> backend, database, Kafka, WebSocket, frontend
+  -> higher risk
+```
 
-The frontend has ADRs for platform-first architecture, LiveKit use, BFF auth, and single backend targeting.
+## What looks strong
 
-Source paths:
+### Clear backend departments
 
-- `aloqa-frontend/docs/adr/0022-livekit-client-sdk.md`
-- `aloqa-frontend/docs/adr/0023-platform-first-architecture.md`
-- `aloqa-frontend/docs/adr/0037-web-bff-backend-session.md`
-- `aloqa-frontend/docs/adr/0038-single-aloqa-backend-target.md`
+Backend services are separated by responsibility.
 
-These decisions reduce ambiguity for future work.
+```text
+auth-service
+org-service
+messaging-service
+file-service
+realtime-service
+notification-service
+search-service
+ws-gateway
+```
 
-### Web BFF Is a Thoughtful Security Boundary
+Why this is good:
 
-The web app includes BFF routes, sealed sessions, refresh handling, CSRF handling, and separate upload proxy behavior.
+When a bug happens, engineers can usually narrow the first place to inspect.
 
-Source paths:
+### Written API contracts
 
-- `aloqa-frontend/apps/web/app/api/[...path]/route.ts`
-- `aloqa-frontend/apps/web/app/api/upload/[...path]/route.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/sessionCookie.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/sessionRefresh.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/withCsrf.ts`
+OpenAPI and protobuf files define how systems talk.
 
-### Realtime Client Has Production-Oriented Behavior
+Why this is good:
 
-The frontend realtime client includes reconnect, heartbeat, resume, and token refresh hooks.
+Frontend and backend can agree on expected paths and data shapes.
 
-Source path: `aloqa-frontend/packages/core/src/realtime/client.ts`.
+Important files:
 
-This is better than a simple demo WebSocket client.
+```text
+aloqa-backend/shared/api/
+aloqa-backend/shared/proto/
+```
 
-### Outbox Pattern Is Present
+### Frontend architecture decisions are documented
 
-Messaging, channel, and meeting outbox tables show that the backend is using a durable-event pattern.
+The frontend explains important choices in ADR files.
 
-Source paths:
+ADR means Architecture Decision Record.
 
-- `aloqa-backend/platform/migrations/20260610000001_messaging_outbox.*`
-- `aloqa-backend/platform/migrations/20260612000001_channels_outbox.*`
-- `aloqa-backend/platform/migrations/20260622085254_meeting_outbox.*`
+Plain English:
 
-## Weaknesses and Risks
+An ADR is a note explaining why the team chose a design.
 
-### Backend Test Coverage Appears Insufficient
+Important files:
 
-The backend AGENTS file says tests are mostly absent except a logger benchmark. Source path: `aloqa-backend/AGENTS.md`.
+```text
+aloqa-frontend/docs/adr/
+```
 
-This is the largest quality gap because backend complexity is high:
+### Web BFF security design is thoughtful
 
-- auth and sessions
-- ABAC permissions
-- file access
-- message idempotency
-- outbox events
-- WebSocket fanout
-- meeting state machines
-- migration safety
+The web app has a BFF layer for safer browser session handling.
 
-### Deployment Config Drift
+Why this is good:
 
-Backend and frontend production nginx configs encode different `/api/*` assumptions.
+It avoids exposing sensitive login material directly to browser code when server-side handling is safer.
 
-Source paths:
+Important files:
 
-- `aloqa-backend/deploy/prod/nginx/nginx.conf`
-- `aloqa-frontend/deploy/nginx.prod.conf`
+```text
+aloqa-frontend/apps/web/app/api/
+aloqa-frontend/apps/web/src/lib/auth/
+```
 
-This is both a code quality and operations quality issue.
+## What looks risky
 
-### Frontend Package Shape Is Still Transitional
+### Backend tests appear too thin
 
-ADR-0023 says to reuse logic, not UI. Some feature packages still expose platform-specific UI entrypoints.
+The backend instructions say tests are mostly absent except limited benchmark coverage.
 
-Source paths:
+Important file:
 
-- `aloqa-frontend/docs/adr/0023-platform-first-architecture.md`
-- `aloqa-frontend/packages/features/`
+```text
+aloqa-backend/AGENTS.md
+```
 
-This is manageable technical debt, but it should not be allowed to spread.
+Why PMs should care:
 
-### Contract Drift Risk
+The backend owns login, permissions, files, meetings, and message delivery. These areas need automated tests.
 
-Backend OpenAPI, backend gRPC, and frontend route helpers are separate artifacts.
+### Frontend and backend API maps can drift
 
-Source paths:
+The backend has OpenAPI routes.
 
-- `aloqa-backend/shared/api/api-gateway/v1/`
-- `aloqa-backend/shared/proto/`
-- `aloqa-frontend/packages/core/src/api/routes.ts`
+The frontend has route helpers.
 
-Without automated checks, developers must remember to update all layers.
+If they disagree, a screen may call the wrong backend path.
 
-### Migration and Domain Complexity
+Important files:
 
-The database has many migrations, especially for meetings. Source path: `aloqa-backend/platform/migrations/`.
+```text
+aloqa-backend/shared/api/api-gateway/v1/
+aloqa-frontend/packages/core/src/api/routes.ts
+```
 
-Complex migrations are not bad by themselves, but they need:
+### Realtime has many moving parts
 
-- migration tests
-- rollback policy
-- production backup policy
-- clear table ownership
-- data migration review
+Realtime involves:
 
-### Runtime Observability Is Not Proved
+```text
+database
+outbox rows
+Kafka
+WebSocket Gateway
+Redis
+frontend realtime client
+```
 
-The codebase has logging and deployment files, but I cannot determine from static inspection whether production has complete dashboards and alerts for:
+Why this is risky:
 
-- API latency/error rate
-- auth failures
-- outbox lag
-- Kafka lag
-- WebSocket connection count
-- LiveKit join failures
-- Redis errors
-- file scan failures
-- search indexing lag
+The message may save correctly but not appear live.
 
-## Quality by Area
+### Deployment routing is unclear
 
-### Backend Business Logic
+Frontend and backend deployment files do not tell the same story for `/api/*`.
 
-Strong service decomposition. Needs much more integration testing.
+Important files:
 
-### Backend Contracts
+```text
+aloqa-frontend/deploy/nginx.prod.conf
+aloqa-backend/deploy/prod/nginx/nginx.conf
+```
 
-Strong source-of-truth layout. Needs drift automation and generated-client checks.
+Why this is risky:
 
-### Database
+The web BFF security model depends on browser API requests going to the right place.
 
-Broad and mature schema. Needs migration/process rigor.
+## Quality by product area
 
-### Frontend Core
+| Area | Quality concern | PM risk |
+|---|---|---|
+| Auth | session, token, 2FA, BFF behavior | users blocked or security issue |
+| Permissions | role and access checks | wrong users get access |
+| Messaging | save plus live delivery | chat feels broken |
+| Files | upload, scan, share, quota | security or data access bug |
+| Meetings | many state transitions | live call failures |
+| Search | indexing and query behavior | stale or missing results |
+| Notifications | stored plus live delivery | users miss important updates |
 
-Good architecture around API and realtime. Needs contract tests against backend.
+## What tests should exist first
 
-### Frontend UI
+Recommended first backend tests:
 
-Likely feature-rich, but platform parity cannot be proven from static inspection. Needs product readiness matrix.
+```text
+register -> login -> refresh -> logout
+create company -> workspace -> channel
+assign role -> deny unauthorized action
+send message -> receive WebSocket event
+upload file -> share -> revoke
+join meeting -> waiting room -> admit
+```
 
-### Deployment
+Recommended frontend tests:
 
-Has real artifacts, but ownership is ambiguous across repos.
+```text
+login page
+BFF refresh behavior
+chat send and receive
+file upload screen
+call join screen
+mobile navigation
+desktop call surface
+```
 
-## Recommended Quality Gates
+## What PMs should ask during planning
 
-Add or enforce:
+- Is this covered by tests today?
+- Does this change an API contract?
+- Does this affect more than one platform?
+- Does this affect permissions?
+- Does this affect realtime events?
+- Does this affect database migrations?
+- Is production routing involved?
+- What smoke test proves it works?
 
-- OpenAPI route registry drift check
-- protobuf breaking-change check
-- backend migration apply check on empty database
-- backend integration test suite for core flows
-- frontend typecheck/lint/test gates for all packages
-- web BFF security tests
-- WebSocket integration tests
-- smoke tests against one canonical production edge config
-- Docker compose config linting
+## Unknowns from code alone
 
-## Code Quality Assessment
+I cannot determine from static code inspection whether production has complete dashboards and alerts for all services.
 
-The codebase has strong architectural bones. The next quality step is not a refactor; it is verification. Add tests and drift checks before adding more feature surface.
+## What you should remember
+
+- Code quality means safe and predictable change.
+- Aloqa has strong architecture separation.
+- Backend test coverage is the biggest quality concern.
+- API drift between frontend and backend is a real risk.
+- Realtime bugs can be partial and hard to see.
+- Deployment routing must be clarified.
+- PMs should ask about tests, contracts, platforms, permissions, and realtime before accepting estimates.

@@ -1,210 +1,329 @@
-# Technology Stack
+# 11. Technology Stack
 
-## Backend Stack
+## What is a technology stack?
 
-Backend language and runtime:
+A technology stack is the list of tools used to build and run the product.
 
-- Go
-- Go workspace
-- Go modules per service
+Real-life analogy:
 
-Source paths:
+If Aloqa is a building, the stack is the set of materials and machines used to build it:
 
-- `aloqa-backend/go.work`
-- `aloqa-backend/*/go.mod`
+- concrete
+- wiring
+- elevators
+- phones
+- security system
+- warehouse system
 
-Backend service communication:
+In software, these are programming languages, frameworks, databases, and infrastructure tools.
 
-- HTTP through API gateway
-- gRPC between gateway and services
-- protobuf contracts under `shared/proto`
-- OpenAPI contracts under `shared/api`
+## Why PMs should care
 
-Source paths:
+The stack affects:
 
-- `aloqa-backend/shared/proto/`
-- `aloqa-backend/shared/api/api-gateway/v1/`
+- hiring
+- feature cost
+- release risk
+- performance
+- security
+- mobile support
+- infrastructure cost
+- time needed for fixes
 
-Backend libraries and infrastructure visible from module manifests and source:
+## Backend stack
 
-- `pgx` for PostgreSQL
-- Redis client libraries
-- `kafka-go`
-- MinIO Go SDK
-- OpenSearch Go client
-- LiveKit server SDK/protocol packages
-- Gorilla WebSocket
-- zap logging
-- caarlos0/env and godotenv for configuration
-- bcrypt/JWT helpers through platform dependencies
-- squirrel SQL builder
-- ogen for OpenAPI generation
-- protobuf/gRPC toolchain
-- Taskfile for workflow automation
+### Go
 
-Source paths:
+What it is:
 
-- `aloqa-backend/*/go.mod`
-- `aloqa-backend/Taskfile.yml`
+Go is the programming language used by the backend.
 
-## Backend Infrastructure
+Why Aloqa uses it:
 
-Infrastructure components:
+Go is common for backend services that need concurrency, networking, and deployment simplicity.
 
-- PostgreSQL
-- Redis
-- Kafka
-- MinIO
-- ClamAV
-- OpenSearch
-- LiveKit
-- nginx
+Where it is used:
 
-Source paths:
+```text
+aloqa-backend/
+aloqa-backend/go.work
+aloqa-backend/*/go.mod
+```
 
-- `aloqa-backend/deploy/compose/core/docker-compose.yml`
-- `aloqa-backend/deploy/prod/docker-compose.yml`
-- `aloqa-backend/deploy/prod/nginx/nginx.conf`
+### PostgreSQL
 
-## Frontend Stack
+What it is:
 
-Frontend language/runtime:
+The main database.
 
-- TypeScript
-- React
-- Next.js for web
-- Electron for desktop
-- Expo/React Native for mobile
-- pnpm workspaces
-- Turbo
+Why Aloqa uses it:
 
-Source paths:
+It stores users, messages, workspaces, files, permissions, and meetings.
 
-- `aloqa-frontend/package.json`
-- `aloqa-frontend/apps/web/package.json`
-- `aloqa-frontend/apps/desktop/package.json`
-- `aloqa-frontend/apps/mobile/package.json`
+Where it is used:
 
-Frontend UI and state:
+```text
+aloqa-backend/platform/migrations/
+```
 
-- Tailwind CSS
-- Radix UI
-- platform-specific UI kits
-- TanStack Query
-- Zustand
-- Zod
+### Redis
 
-Source paths:
+What it is:
 
-- `aloqa-frontend/package.json`
-- `aloqa-frontend/packages/`
+Fast short-term memory.
 
-Realtime and media:
+Why Aloqa uses it:
 
-- WebSocket client in `packages/core`
-- LiveKit client SDK by ADR
-- LiveKit React Native dependencies for mobile
+Presence, room state, typing, notifications, and some cache-like behavior need fast temporary storage.
 
-Source paths:
+### Kafka
 
-- `aloqa-frontend/packages/core/src/realtime/`
-- `aloqa-frontend/docs/adr/0022-livekit-client-sdk.md`
-- `aloqa-frontend/apps/mobile/package.json`
+What it is:
 
-Local/mobile persistence and platform features:
+Internal event delivery.
 
-- Dexie in web dependencies
-- op-sqlite in mobile dependencies
-- MMKV
-- Expo Secure Store
-- native notifications
-- SSL pinning
-- CallKit/Telecom-style integrations where mobile dependencies support them
+Why Aloqa uses it:
 
-Source paths:
+When a message or meeting update happens, other systems need to hear about it.
 
-- `aloqa-frontend/apps/web/package.json`
-- `aloqa-frontend/apps/mobile/package.json`
+### MinIO
 
-## Testing and Quality Tooling
+What it is:
 
-Frontend:
+Object storage for uploaded files.
 
-- TypeScript typecheck
-- ESLint
-- Prettier
-- Vitest
-- Playwright
-- Detox/mobile checks where configured
-- CI workflows for release PR, release CD, and mobile CI
+Why Aloqa uses it:
 
-Source paths:
+Files are better stored in object storage than directly inside the database.
 
-- `aloqa-frontend/package.json`
-- `aloqa-frontend/.github/workflows/`
+### ClamAV
 
-Backend:
+What it is:
 
-- Taskfile tasks
-- Go toolchain
-- buf/protobuf generation
-- ogen generation
-- migrations
-- limited tests noted by backend instructions
+Malware scanning software.
 
-Source paths:
+Why Aloqa uses it:
 
-- `aloqa-backend/Taskfile.yml`
-- `aloqa-backend/AGENTS.md`
+Uploaded files should be checked before they are trusted.
 
-## Deployment Stack
+### OpenSearch
 
-Backend deployment:
+What it is:
 
-- Docker Compose
-- nginx
-- migration container
-- SSH-based deployment workflow in GitHub Actions
+Search engine.
 
-Source paths:
+Why Aloqa uses it:
 
-- `aloqa-backend/deploy/prod/docker-compose.yml`
-- `aloqa-backend/deploy/prod/nginx/nginx.conf`
-- `aloqa-backend/.github/workflows/deploy.yml`
+Users expect fast search over content.
 
-Frontend deployment:
+### LiveKit
 
-- Dockerfile(s)
-- nginx production config
-- release PR workflow
-- release CD workflow
-- smoke script
-- production docs referencing `https://airion-cargo.online/`
+What it is:
 
-Source paths:
+Audio/video meeting platform.
 
-- `aloqa-frontend/docs/CICD.md`
-- `aloqa-frontend/docs/infrastructure-architecture.md`
-- `aloqa-frontend/deploy/nginx.prod.conf`
-- `aloqa-frontend/deploy/smoke-live.sh`
-- `aloqa-frontend/.github/workflows/`
+Why Aloqa uses it:
 
-## Version Policy Notes
+Building reliable calls from scratch is expensive and risky.
 
-The frontend AGENTS file says the stack was last verified around a date and lists modern versions such as Next.js 16, React 19.2, Tailwind v4, Electron 41, Expo SDK 55, React Native 0.83.6, TypeScript 6, pnpm 10, and Turbo 2. Source path: `aloqa-frontend/AGENTS.md`.
+## Frontend stack
 
-The backend AGENTS file lists Go 1.26.2 and infrastructure versions such as PostgreSQL 18.3 and Redis 8.6.3. Source path: `aloqa-backend/AGENTS.md`.
+### TypeScript
 
-These are version-policy claims from repository instructions. They should be verified against actual `go.mod`, Docker images, package lockfiles, and CI runtime before release decisions.
+What it is:
 
-## Stack Assessment
+JavaScript with type checking.
 
-The stack is modern and appropriate for a real-time collaboration product. The main stack risk is not obsolete technology; it is integration complexity:
+Why Aloqa uses it:
 
-- many services
-- many contracts
-- multiple client platforms
-- multiple deployment configs
-- multiple state systems
+It helps catch mistakes before runtime.
 
-The project needs strong verification and deployment ownership to match the ambition of its stack.
+Where it is used:
+
+```text
+aloqa-frontend/
+```
+
+### React
+
+What it is:
+
+A UI library for building screens.
+
+Why Aloqa uses it:
+
+Web, desktop renderer, and mobile UI can share React-style thinking.
+
+### Next.js
+
+What it is:
+
+The web app framework.
+
+Why Aloqa uses it:
+
+It supports pages, server-side behavior, and special web route handlers.
+
+Where it is used:
+
+```text
+aloqa-frontend/apps/web/
+```
+
+### BFF
+
+What it is:
+
+BFF means Backend for Frontend.
+
+Plain English:
+
+It is a helper server layer inside the web app.
+
+Why Aloqa uses it:
+
+It lets the browser send safer same-website requests while the web server handles sensitive backend session details.
+
+Where it is used:
+
+```text
+aloqa-frontend/apps/web/app/api/
+```
+
+### Electron
+
+What it is:
+
+A way to build desktop apps using web technology.
+
+Where it is used:
+
+```text
+aloqa-frontend/apps/desktop/
+```
+
+### Expo and React Native
+
+What it is:
+
+Tools for building mobile apps.
+
+Where it is used:
+
+```text
+aloqa-frontend/apps/mobile/
+```
+
+### TanStack Query, Zustand, and Zod
+
+Simple explanations:
+
+- TanStack Query helps fetch and cache server data.
+- Zustand helps manage app state.
+- Zod helps validate data shapes.
+
+Why Aloqa needs them:
+
+Frontend apps need reliable data loading, local state, and validation.
+
+## Build and workflow tools
+
+### pnpm
+
+Package manager for frontend dependencies.
+
+### Turbo
+
+Runs frontend monorepo tasks efficiently.
+
+### Taskfile
+
+Runs backend development tasks.
+
+Where it is used:
+
+```text
+aloqa-backend/Taskfile.yml
+```
+
+### Docker Compose
+
+Runs multiple services together.
+
+Where it is used:
+
+```text
+aloqa-backend/deploy/compose/core/docker-compose.yml
+aloqa-backend/deploy/prod/docker-compose.yml
+```
+
+## CI/CD
+
+CI means automated checks before or during release.
+
+CD means automated delivery/deployment steps.
+
+Important files:
+
+```text
+aloqa-frontend/.github/workflows/
+aloqa-backend/.github/workflows/deploy.yml
+aloqa-frontend/docs/CICD.md
+```
+
+## Stack diagram
+
+```text
+User apps
+  |-- Next.js web
+  |-- Electron desktop
+  |-- Expo mobile
+        |
+        v
+Backend Go services
+        |
+        v
+Infrastructure
+  |-- PostgreSQL
+  |-- Redis
+  |-- Kafka
+  |-- MinIO
+  |-- ClamAV
+  |-- OpenSearch
+  |-- LiveKit
+```
+
+## What can make stack changes expensive?
+
+- changing the database version
+- changing auth libraries
+- changing LiveKit behavior
+- changing frontend framework versions
+- changing mobile native dependencies
+- changing Kafka event behavior
+- changing production deployment tools
+
+## Important files
+
+```text
+aloqa-backend/go.work
+aloqa-backend/*/go.mod
+aloqa-backend/deploy/prod/docker-compose.yml
+aloqa-frontend/package.json
+aloqa-frontend/apps/web/package.json
+aloqa-frontend/apps/desktop/package.json
+aloqa-frontend/apps/mobile/package.json
+```
+
+## What you should remember
+
+- The backend is mainly Go.
+- The frontend is mainly TypeScript and React.
+- Web uses Next.js.
+- Desktop uses Electron.
+- Mobile uses Expo and React Native.
+- PostgreSQL stores long-term data.
+- Redis stores short-term state.
+- Kafka moves events.
+- MinIO stores files.
+- LiveKit handles calls.

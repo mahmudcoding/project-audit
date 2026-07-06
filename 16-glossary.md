@@ -1,205 +1,346 @@
-# Glossary
+# 16. Glossary
+
+This glossary explains project terms in plain language.
 
 ## ABAC
 
-Attribute-based access control. In Aloqa, ABAC appears in the organization service and platform permissions code to decide whether a user can perform an action in a company, workspace, channel, or related resource.
+ABAC means attribute-based access control.
 
-Source paths:
+Plain English:
 
-- `aloqa-backend/org-service/internal/core/abac/`
-- `aloqa-backend/platform/pkg/permissions/`
+The system checks facts before allowing an action.
+
+Example facts:
+
+- who is the user?
+- what company are they in?
+- what role do they have?
+- what action are they trying to do?
+- what resource are they touching?
+
+Why Aloqa needs it:
+
+Aloqa has companies, workspaces, channels, roles, files, and meetings. Access rules need more than "is admin or not."
+
+Where it is used:
+
+```text
+aloqa-backend/org-service/internal/core/abac/
+aloqa-backend/platform/pkg/permissions/
+```
+
+## API
+
+An API is a doorway for one part of software to ask another part to do work.
+
+Example:
+
+```text
+Frontend calls login API.
+Backend checks login.
+```
 
 ## API Gateway
 
-The backend HTTP entrypoint. It exposes OpenAPI routes and calls backend services through gRPC.
+The backend reception desk.
 
-Source path: `aloqa-backend/api-gateway/`.
+Frontend apps send many requests here. The gateway forwards work to the right backend service.
+
+Where it is used:
+
+```text
+aloqa-backend/api-gateway/
+```
 
 ## BFF
 
-Backend for frontend. In Aloqa web, the Next.js app has route handlers that receive browser `/api/*` calls and forward them to the backend gateway while managing sealed backend sessions.
+BFF means Backend for Frontend.
 
-Source paths:
+Plain English:
 
-- `aloqa-frontend/docs/adr/0037-web-bff-backend-session.md`
-- `aloqa-frontend/apps/web/app/api/`
+It is a helper server layer for one frontend app.
 
-## Breakout Room
+In Aloqa web, the BFF sits between the browser and backend.
 
-A meeting sub-room used during calls. Aloqa supports breakout rooms, participants, chat, invitations, waiting/join requests, and close/move flows.
+Analogy:
 
-Source paths:
+The BFF is a receptionist for browser requests.
 
-- `aloqa-backend/shared/proto/meeting/`
-- `aloqa-backend/platform/migrations/20260622080000_breakout_rooms.*`
-- `aloqa-backend/platform/migrations/20260624100000_breakout_room_chat.*`
+Where it is used:
+
+```text
+aloqa-frontend/apps/web/app/api/
+```
+
+## Backend
+
+The trusted server-side part of Aloqa.
+
+It stores data, checks permissions, and performs business rules.
+
+## Breakout room
+
+A smaller room inside a meeting.
+
+Example:
+
+A large meeting splits into three smaller group discussions.
 
 ## Channel
 
-A workspace conversation space. Channels can have members, messages, public join behavior, archive/unarchive behavior, mute state, and permissions.
+A conversation space inside a workspace.
 
-Source paths:
+Example:
 
-- `aloqa-backend/org-service/`
-- `aloqa-backend/messaging-service/`
-- `aloqa-backend/platform/migrations/20260504074928_init.*`
+`#engineering`, `#support`, or `#announcements`.
 
-## Company
+## CI
 
-Top-level organizational container. Companies contain members, roles, workspaces, and permissions.
+CI means continuous integration.
 
-Source path: `aloqa-backend/org-service/`.
+Plain English:
 
-## Contract Drift
+Automated checks that run before code is merged or released.
 
-When backend OpenAPI/protobuf contracts, frontend route helpers, generated clients, or documentation no longer agree.
+## Cookie
 
-Important paths:
+A small piece of data stored by the browser.
 
-- `aloqa-backend/shared/api/api-gateway/v1/`
-- `aloqa-backend/shared/proto/`
-- `aloqa-frontend/packages/core/src/api/routes.ts`
+Aloqa web uses cookies for session behavior.
 
 ## CSRF
 
-Cross-site request forgery. The web BFF uses CSRF checks for mutating cookie-authenticated requests.
+CSRF means cross-site request forgery.
 
-Source path: `aloqa-frontend/apps/web/src/lib/auth/withCsrf.ts`.
+Plain English:
 
-## Direct Message
+A bad website tries to trick a logged-in browser into sending a request.
 
-A private conversation channel between users. Aloqa models DMs alongside channel/chat behavior with additional DM-specific tables and privacy/blocking behavior.
+Aloqa uses CSRF checks for safer browser requests.
 
-Source paths:
+## Database
 
-- `aloqa-backend/platform/migrations/20260522064024_dm_channels.*`
-- `aloqa-backend/platform/migrations/20260617000001_dm_chat_logic.*`
-- `aloqa-backend/messaging-service/`
+The long-term storage system.
 
-## Gateway
+In Aloqa, PostgreSQL is the main database.
 
-Usually refers to either the API gateway or WebSocket gateway. Be explicit when discussing architecture.
+## Direct message
+
+A private conversation between users.
+
+Often called DM.
+
+## Docker Compose
+
+A tool for running many services together.
+
+Aloqa uses it for local and production-like service setup.
+
+## Event
+
+A record that something happened.
+
+Example:
+
+```text
+message_created
+meeting_joined
+notification_created
+```
+
+## Frontend
+
+The part users see and click.
+
+In Aloqa, frontend includes web, desktop, and mobile apps.
 
 ## gRPC
 
-Backend service-to-service API protocol. Aloqa defines gRPC services in protobuf files under `shared/proto`.
+A private communication method between backend services.
 
-Source path: `aloqa-backend/shared/proto/`.
+Analogy:
+
+The internal phone system between backend departments.
+
+Where it is defined:
+
+```text
+aloqa-backend/shared/proto/
+```
 
 ## Kafka
 
-Event broker used for asynchronous service communication and event fanout. Aloqa uses Kafka with outbox-style publishing for messaging, meeting, notification, and search-related flows.
+An internal event delivery system.
 
-Source paths:
+Analogy:
 
-- `aloqa-backend/deploy/prod/docker-compose.yml`
-- `aloqa-backend/messaging-service/`
-- `aloqa-backend/realtime-service/`
-- `aloqa-backend/search-service/`
+The company mailroom.
+
+One service sends an event. Another service picks it up.
 
 ## LiveKit
 
-Media infrastructure used for audio/video calls. Aloqa uses LiveKit rather than building custom WebRTC media infrastructure.
+The audio/video meeting system.
 
-Source paths:
+Aloqa uses it so the team does not need to build video calls from scratch.
 
-- `aloqa-frontend/docs/adr/0022-livekit-client-sdk.md`
-- `aloqa-backend/realtime-service/`
-- `aloqa-backend/deploy/prod/docker-compose.yml`
+## Migration
 
-## Meeting
+An ordered database change.
 
-A video/call session with participants, room settings, admins, permissions, waiting room, chat, reactions, device requests, moderation, and breakout rooms.
+Example:
 
-Source paths:
+```text
+Create files table.
+Add meeting settings column.
+```
 
-- `aloqa-backend/realtime-service/`
-- `aloqa-backend/shared/proto/meeting/`
-- `aloqa-backend/platform/migrations/`
+Where migrations live:
+
+```text
+aloqa-backend/platform/migrations/
+```
+
+## Microservice
+
+A separate backend service with its own responsibility.
+
+Analogy:
+
+A department inside a company.
+
+Example:
+
+```text
+Auth Service handles login.
+Messaging Service handles messages.
+```
 
 ## MinIO
 
-Object storage used for uploaded files.
+Object storage for uploaded files.
 
-Source paths:
+Analogy:
 
-- `aloqa-backend/file-service/`
-- `aloqa-backend/deploy/prod/docker-compose.yml`
+The file storage room.
 
 ## OpenAPI
 
-HTTP API contract format. Aloqa's API gateway OpenAPI source lives under `shared/api/api-gateway/v1`.
+The written menu of public HTTP API routes.
 
-Source path: `aloqa-backend/shared/api/api-gateway/v1/api-gateway.openapi.yaml`.
+Where it lives:
+
+```text
+aloqa-backend/shared/api/api-gateway/v1/
+```
 
 ## OpenSearch
 
-Search engine used by the search service.
-
-Source paths:
-
-- `aloqa-backend/search-service/`
-- `aloqa-backend/deploy/prod/docker-compose.yml`
+The search engine used to find content quickly.
 
 ## Outbox
 
-A database table pattern where a service writes business data and an event row in the same transaction. A relay later publishes the event to Kafka.
+A database table that stores events to send later.
 
-Source paths:
+Analogy:
 
-- `aloqa-backend/platform/migrations/20260610000001_messaging_outbox.*`
-- `aloqa-backend/platform/migrations/20260612000001_channels_outbox.*`
-- `aloqa-backend/platform/migrations/20260622085254_meeting_outbox.*`
+An outgoing mail tray.
 
-## Platform-First Frontend
+Why it matters:
 
-Frontend architecture where shared packages reuse business logic, not platform UI. Web, desktop, and mobile own their UI surfaces.
+It helps avoid losing events if a delivery system is temporarily unavailable.
 
-Source path: `aloqa-frontend/docs/adr/0023-platform-first-architecture.md`.
+## Permission
+
+A rule that says whether a user can do something.
+
+Analogy:
+
+An access badge.
+
+## PostgreSQL
+
+A relational database used as Aloqa's main long-term storage.
 
 ## Redis
 
-Fast key-value store used for cache, session-adjacent state, pub/sub, presence, room state, typing, and other realtime coordination.
+Fast short-term storage.
 
-Source paths:
+Analogy:
 
-- `aloqa-backend/realtime-service/internal/infrastructure/redis/`
-- `aloqa-backend/ws-gateway/`
-- `aloqa-backend/deploy/prod/docker-compose.yml`
+Sticky notes or a whiteboard.
+
+Used for live state, presence, typing, and other temporary data.
+
+## Realtime
+
+Updates that arrive without refreshing.
+
+Example:
+
+New messages appear while a user is still looking at the screen.
 
 ## Role
 
-A named set of permissions assigned to users in company/workspace contexts. Aloqa supports custom roles and user-role assignments.
+A named set of permissions.
 
-Source paths:
+Example:
 
-- `aloqa-backend/platform/migrations/20260520061940_add_abac_roles.*`
-- `aloqa-backend/platform/migrations/20260604000001_custom_roles_v2.*`
-- `aloqa-backend/org-service/`
+Admin, member, guest, or custom company role.
 
-## Sealed Session
+## Sealed cookie
 
-The web BFF's encrypted/authenticated cookie containing backend token material. It is stored in the `aloqa_bff_session` HttpOnly cookie.
+A protected browser cookie.
 
-Source path: `aloqa-frontend/apps/web/src/lib/auth/sessionCookie.ts`.
+Analogy:
+
+A locked envelope carried by the browser, opened safely by the server.
+
+## Session
+
+A login state.
+
+Analogy:
+
+A visitor pass showing the user is currently signed in.
+
+## WebSocket
+
+A live connection that stays open.
+
+Analogy:
+
+A phone call that stays connected.
+
+Why Aloqa needs it:
+
+Messages, notifications, typing, and meeting updates need to arrive live.
 
 ## WebSocket Gateway
 
-Backend service that holds persistent WebSocket connections, accepts subscriptions, consumes Kafka events, and fans out realtime updates.
+The backend service that manages live WebSocket connections.
 
-Source path: `aloqa-backend/ws-gateway/`.
+Where it is used:
+
+```text
+aloqa-backend/ws-gateway/
+```
 
 ## Workspace
 
-A collaboration space inside a company. Workspaces contain members, channels, invites, storage settings, and quota behavior.
+A work area inside a company.
 
-Source paths:
+Workspaces contain channels, members, settings, storage, and invites.
 
-- `aloqa-backend/org-service/`
-- `aloqa-backend/platform/migrations/20260504074928_init.*`
+## What you should remember
 
-## WS Ticket
-
-A short-lived token issued by the web BFF so browser clients can connect directly to the WebSocket gateway without exposing long-lived backend token material.
-
-Source path: `aloqa-frontend/apps/web/app/api/realtime/ws-ticket/route.ts`.
+- API means a doorway between software parts.
+- Gateway means reception desk.
+- BFF means browser-facing helper server.
+- Database means long-term storage.
+- Redis means short-term memory.
+- Kafka means internal delivery service.
+- WebSocket means live connection.
+- LiveKit means audio/video meeting system.
+- Permission means access badge.
+- Session means visitor pass.

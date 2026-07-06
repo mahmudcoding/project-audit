@@ -1,299 +1,404 @@
-# Technical Debt
+# 14. Technical Debt
 
-## Debt Summary
+## What is technical debt?
 
-The most important debt in Aloqa is not messy code style. It is system coordination debt:
+Technical debt is work the team still needs to do to make the product safer, easier, or cheaper to change.
 
-- deployment assumptions differ across repos
-- contract layers can drift
-- backend coverage is thin
-- realtime behavior spans too many systems without visible contract tests
-- frontend architecture is in transition from shared UI packages to platform-owned UI
+Real-life analogy:
 
-## P0: Decide the Production Edge
+It is like building maintenance.
 
-### Problem
+The building may still work today, but if you ignore wiring, plumbing, locks, or fire alarms, future repairs become more expensive and dangerous.
 
-The frontend BFF architecture expects browser `/api/*` traffic to reach Next.js. The frontend production nginx supports that model.
+## Why PMs should care
 
-Source paths:
+Technical debt affects:
 
-- `aloqa-frontend/docs/adr/0037-web-bff-backend-session.md`
-- `aloqa-frontend/deploy/nginx.prod.conf`
+- delivery speed
+- bug risk
+- release safety
+- engineering estimates
+- customer trust
+- incident risk
 
-The backend production nginx routes `/api/v1/` directly to the backend API gateway.
+Technical debt is not always bad. Sometimes teams take debt to move faster. The important thing is to know which debt is dangerous.
 
-Source path: `aloqa-backend/deploy/prod/nginx/nginx.conf`.
+## Debt priority scale
 
-### Impact
+```text
+P0 -> fix soon, high risk
+P1 -> important, plan into roadmap
+P2 -> cleanup or hardening, lower urgency
+```
 
-If the backend nginx is the browser-facing edge, web auth/session assumptions can be wrong. This can affect CSRF, cookie handling, refresh behavior, and token exposure assumptions.
+Quick terms used in this chapter:
 
-### Fix
+- BFF means Backend for Frontend, the web app's helper server layer.
+- OpenAPI means the written public HTTP API menu.
+- CI means automated checks.
+- Kafka means internal event delivery.
+- Outbox means a database tray of events to send later.
 
-Choose and document one edge configuration. Make the inactive config impossible to deploy accidentally, or generate both from one source.
+## P0: Decide the production edge
 
-## P0: Add Backend Integration Tests for Core Flows
+What this means:
 
-### Problem
+The "edge" is the public entrance to production traffic.
 
-Backend repository guidance says tests are mostly absent except limited logger benchmark coverage.
+Analogy:
 
-Source path: `aloqa-backend/AGENTS.md`.
+It is the front door of the building. Everyone must agree which door visitors use.
 
-### Impact
+The issue:
 
-The backend has high-risk flows in auth, ABAC, messaging, files, meetings, and realtime. Bugs can cross service boundaries and may not appear in isolated manual tests.
+The frontend deployment says browser API requests should go to the web BFF.
 
-### Fix
+The backend deployment sends `/api/v1/` requests directly to the API Gateway.
 
-Start with integration tests for:
+Important files:
 
-- register/login/refresh/logout
-- create company/workspace/channel
-- role assignment and permission denial
-- send message and outbox event
-- WebSocket subscribe and message fanout
-- file upload/share/revoke
-- meeting join/waiting/admit
-- meeting admin permission update
+```text
+aloqa-frontend/deploy/nginx.prod.conf
+aloqa-backend/deploy/prod/nginx/nginx.conf
+aloqa-frontend/docs/adr/0037-web-bff-backend-session.md
+```
 
-## P0: Automate Contract Drift Checks
+Why business should care:
 
-### Problem
+If requests enter through the wrong door, web login and security behavior may not match the design.
 
-Contracts exist in multiple places:
+Who depends on it:
 
-- backend OpenAPI
-- backend protobuf
-- frontend route registry
-- frontend BFF behavior
+- web frontend
+- backend gateway
+- auth service
+- DevOps/deployment
+- security
 
-Source paths:
+Modification cost:
 
-- `aloqa-backend/shared/api/api-gateway/v1/`
-- `aloqa-backend/shared/proto/`
-- `aloqa-frontend/packages/core/src/api/routes.ts`
+Medium to high. It may be mostly configuration, but the impact is security-critical and needs careful smoke testing.
 
-### Impact
+Recommended fix:
 
-Frontend can call routes that backend does not expose, backend can change routes without frontend updates, and generated code can silently drift.
+Pick one official production routing model and remove or clearly mark the other as inactive.
 
-### Fix
+## P0: Add backend integration tests
 
-Add CI checks:
+What this means:
 
-- route registry path exists in OpenAPI
-- OpenAPI generated client is up to date
-- protobuf generated code is up to date
-- breaking-change checks for public contracts
+Integration tests check that multiple parts work together.
 
-## P1: Version Realtime Event Schemas
+Analogy:
 
-### Problem
+Testing a car engine alone is useful. But integration testing checks whether the engine, brakes, steering, and dashboard work together on the road.
 
-Realtime events are shared implicitly between backend producers, WebSocket gateway, and frontend event maps.
+The issue:
 
-Source paths:
+Backend guidance says tests are mostly absent except limited benchmark coverage.
 
-- `aloqa-backend/ws-gateway/`
-- `aloqa-backend/messaging-service/`
-- `aloqa-backend/realtime-service/`
-- `aloqa-frontend/packages/core/src/realtime/events.ts`
+Important file:
 
-### Impact
+```text
+aloqa-backend/AGENTS.md
+```
 
-Event fields or names can drift and break clients at runtime.
+Why business should care:
 
-### Fix
+The backend owns the highest-risk product rules: auth, permissions, files, messaging, meetings, and realtime.
 
-Define event schema files and versioning rules. Add tests that replay backend event fixtures through frontend parsers.
+Who depends on it:
 
-## P1: Add Outbox Observability
+- all frontend platforms
+- QA
+- support
+- customers
 
-### Problem
+Recommended first tests:
 
-Outbox tables are present, but this audit cannot determine whether production has visibility into lag, retry, or stuck events.
+```text
+login and refresh
+workspace/channel creation
+permission denial
+send message and realtime event
+file upload and share revoke
+meeting join and waiting room
+```
 
-Source paths:
+Modification cost:
 
-- `aloqa-backend/platform/migrations/20260610000001_messaging_outbox.*`
-- `aloqa-backend/platform/migrations/20260612000001_channels_outbox.*`
-- `aloqa-backend/platform/migrations/20260622085254_meeting_outbox.*`
+High to start, but it reduces future release risk.
 
-### Impact
+## P0: Add contract drift checks
 
-Chat, channel, meeting, search, and notification behavior can silently lag or stop.
+What this means:
 
-### Fix
+Contract drift happens when two parts of the system disagree about how they talk.
 
-Track:
+Example:
 
-- oldest unprocessed event age
-- per-topic publish error count
+```text
+Frontend calls /api/v1/example
+Backend only supports /api/v1/examples
+```
+
+The issue:
+
+Backend OpenAPI, backend protobuf, and frontend route helpers are separate files.
+
+Important files:
+
+```text
+aloqa-backend/shared/api/api-gateway/v1/
+aloqa-backend/shared/proto/
+aloqa-frontend/packages/core/src/api/routes.ts
+```
+
+Why business should care:
+
+Screens can break even when both frontend and backend code "look correct" separately.
+
+Recommended fix:
+
+Add CI checks that compare frontend routes with backend OpenAPI and fail if they drift.
+
+Modification cost:
+
+Medium.
+
+## P1: Version realtime events
+
+What this means:
+
+Realtime events are messages sent over live connections.
+
+Example:
+
+```text
+message_created
+reaction_updated
+meeting_participant_joined
+```
+
+The issue:
+
+Backend and frontend must agree on event names and fields.
+
+Important files:
+
+```text
+aloqa-backend/ws-gateway/
+aloqa-frontend/packages/core/src/realtime/events.ts
+```
+
+Why business should care:
+
+If events drift, chat or meetings can break without normal page errors.
+
+Recommended fix:
+
+Create versioned event schemas and tests that replay backend events through frontend parsers.
+
+Modification cost:
+
+Medium to high.
+
+## P1: Add outbox and Kafka observability
+
+What this means:
+
+Observability means the team can see what the system is doing.
+
+The outbox and Kafka move events behind the scenes.
+
+Analogy:
+
+If Kafka is the mailroom, observability is the tracking screen showing delayed or lost mail.
+
+The issue:
+
+This audit found outbox tables, but cannot prove production dashboards or alerts exist.
+
+Important files:
+
+```text
+aloqa-backend/platform/migrations/20260610000001_messaging_outbox.*
+aloqa-backend/platform/migrations/20260612000001_channels_outbox.*
+aloqa-backend/platform/migrations/20260622085254_meeting_outbox.*
+```
+
+Why business should care:
+
+Messages may save but not deliver live. Notifications may lag. Search may become stale.
+
+Recommended metrics:
+
+- oldest unsent event
 - retry count
+- failed event count
+- Kafka lag
 - dead-letter count
-- Kafka consumer lag
 
-## P1: Clarify Table Ownership
+Modification cost:
 
-### Problem
+Medium.
 
-Multiple services share one Postgres schema. That is pragmatic, but table ownership must be explicit.
+## P1: Clarify database table ownership
 
-Source path: `aloqa-backend/platform/migrations/`.
+What this means:
 
-### Impact
+Each table should have an owning service.
 
-Services can accidentally depend on each other's internal tables or bypass domain rules.
+Analogy:
 
-### Fix
+Every filing cabinet should have a department responsible for it.
 
-Add a table ownership document:
+The issue:
 
-- table
-- owning service
-- allowed readers
-- allowed writers
-- public contract, if any
+Many backend services use the same PostgreSQL database.
 
-## P1: Resolve Frontend Feature Package Migration
+Important files:
 
-### Problem
+```text
+aloqa-backend/platform/migrations/
+```
 
-ADR-0023 says app UI should be app-owned and feature packages should be headless. Some feature packages still expose platform UI entrypoints.
+Why business should care:
 
-Source paths:
+If ownership is unclear, one feature can accidentally break another.
 
-- `aloqa-frontend/docs/adr/0023-platform-first-architecture.md`
-- `aloqa-frontend/packages/features/`
+Recommended fix:
 
-### Impact
+Create a table ownership document:
 
-Shared UI can become the wrong abstraction for platform-specific UX and can slow platform-specific iteration.
+```text
+table -> owner service -> allowed readers -> allowed writers
+```
 
-### Fix
+Modification cost:
 
-For each feature package, classify:
+Medium.
 
-- already headless
-- transitional
-- should move UI to app
-- allowed exception
+## P1: Complete frontend platform-first migration
 
-Then migrate only when touching that feature.
+What this means:
 
-## P1: Harden File Security Tests
+The frontend architecture wants shared logic, not shared UI.
 
-### Problem
+The issue:
 
-Files touch upload, scan, storage, sharing, quotas, and content access.
+Some feature packages still expose platform-specific UI entrypoints.
 
-Source paths:
+Important files:
 
-- `aloqa-backend/file-service/`
-- `aloqa-backend/platform/migrations/20260608000003_files.*`
-- `aloqa-backend/platform/migrations/20260609000002_file_shares.*`
-- `aloqa-frontend/apps/web/app/api/upload/[...path]/route.ts`
+```text
+aloqa-frontend/docs/adr/0023-platform-first-architecture.md
+aloqa-frontend/packages/features/
+```
 
-### Impact
+Why business should care:
 
-File bugs can become data exposure or malware-handling issues.
+Web, desktop, and mobile users may need different UI. Over-sharing UI can slow platform-specific improvements.
 
-### Fix
+Recommended fix:
 
-Add tests for:
+Migrate feature packages gradually when those areas are touched.
 
-- unauthorized file access
-- revoked share access
-- workspace boundary access
-- scan failure behavior
-- quota enforcement
-- deleted file access
-- meeting attachment access
+Modification cost:
 
-## P1: Meeting State-Machine Tests
+Medium, but should be done incrementally.
 
-### Problem
+## P1: Harden file security tests
 
-Meeting behavior has many tables, events, permissions, and UI states.
+What this means:
 
-Source paths:
+Files require extra safety because users upload unknown content.
 
-- `aloqa-backend/realtime-service/`
-- `aloqa-backend/shared/proto/meeting/`
-- `aloqa-backend/platform/migrations/`
-- `aloqa-frontend/packages/features/calls/`
+Important files:
 
-### Impact
+```text
+aloqa-backend/file-service/
+aloqa-frontend/apps/web/app/api/upload/[...path]/route.ts
+```
 
-Edge cases can break live calls: waiting room, bans, admin permissions, device requests, breakout rooms, and LiveKit state can disagree.
+Test cases:
 
-### Fix
+```text
+unauthorized file access
+revoked share
+workspace boundary access
+scan failure
+quota enforcement
+deleted file access
+meeting attachment access
+```
 
-Create a meeting test suite around state transitions.
+Modification cost:
 
-## P2: Deployment File Linting
+Medium to high.
 
-### Problem
+## P1: Add meeting state-machine tests
 
-The backend production compose has a duplicate `POSTGRES_HOST: postgres` line under `messaging-service`.
+What this means:
 
-Source path: `aloqa-backend/deploy/prod/docker-compose.yml`.
+A state machine is a set of allowed states and transitions.
 
-### Impact
+Plain English:
 
-Probably low, but it indicates deployment files are not linted or normalized.
+A meeting participant may be waiting, admitted, rejected, muted, banned, or moved to a breakout room. The system must handle those changes in the right order.
 
-### Fix
+Important files:
 
-Add compose validation and duplicate-key linting to CI.
+```text
+aloqa-backend/realtime-service/
+aloqa-backend/shared/proto/meeting/
+aloqa-backend/platform/migrations/
+aloqa-frontend/packages/features/calls/
+```
 
-## P2: Documentation Drift Cleanup
+Why business should care:
 
-### Problem
+Meeting bugs are highly visible during live calls.
 
-Some backend guidance appears stale compared with the implemented services.
+Modification cost:
 
-Source paths:
+High, but important.
 
-- `aloqa-backend/AGENTS.md`
-- `aloqa-backend/file-service/`
-- `aloqa-backend/messaging-service/`
-- `aloqa-backend/realtime-service/`
-- `aloqa-backend/search-service/`
-- `aloqa-backend/ws-gateway/`
+## P2: Clean up deployment file linting
 
-### Impact
+The backend production compose includes a duplicate `POSTGRES_HOST: postgres` entry under `messaging-service`.
 
-New engineers can make wrong decisions based on old status notes.
+Important file:
 
-### Fix
+```text
+aloqa-backend/deploy/prod/docker-compose.yml
+```
 
-Update repo docs after each milestone. Add dates and ownership to status claims.
+This is likely not the biggest issue, but deployment files should be linted.
 
-## P2: Production Observability Inventory
+Modification cost:
 
-### Problem
+Low to medium.
 
-The repos show deployment scripts and service configs, but not a complete observability picture.
+## P2: Reduce documentation drift
 
-### Impact
+Some repo guidance appears older than current implementation.
 
-Incidents can take longer to detect and resolve.
+Why business should care:
 
-### Fix
+Old documentation makes onboarding slower and causes wrong assumptions.
 
-Create an observability matrix:
+Modification cost:
 
-- service
-- logs
-- metrics
-- traces
-- dashboards
-- alerts
-- runbooks
+Low to medium.
 
-## Technical Debt Assessment
+## What you should remember
 
-Aloqa's debt is manageable if addressed as system hardening, not cosmetic cleanup. Fix edge routing, tests, contracts, and realtime observability before broad refactors.
+- Technical debt is future maintenance risk.
+- The highest debt is production routing clarity.
+- Backend integration tests are urgently needed.
+- Contract drift checks would prevent frontend/backend mismatch.
+- Realtime events need clearer versioning.
+- Outbox and Kafka need visible monitoring.
+- File and meeting areas deserve extra safety tests.
+- Not all debt is equal; prioritize by business risk.

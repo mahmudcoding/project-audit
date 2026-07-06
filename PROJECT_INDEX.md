@@ -1,57 +1,104 @@
-# Aloqa Project Audit Index
+# Aloqa Onboarding Documentation
 
-This audit covers the local project rooted at `/Users/mahmud/Projects/aloqa`.
-That directory contains two primary source repositories:
+This folder is a beginner-friendly guide to the Aloqa project.
 
-- `aloqa-backend`: Go workspace with backend services, infrastructure, API contracts, database migrations, and production compose files.
-- `aloqa-frontend`: platform-first frontend monorepo for web, desktop, and mobile clients.
+It is written for a new project manager who understands software in general, but does not know this codebase yet.
 
-The audit intentionally treats Aloqa as a system made of both repositories. A claim about "the project" usually depends on both halves.
+Do not read this like a code reference. Read it like an onboarding book.
 
-## Documents
+## How to read these documents
 
-1. `01-executive-summary.md`: system-level status, strengths, risks, and recommended priorities.
-2. `02-system-architecture.md`: runtime topology, repository ownership, service boundaries, and deployment shape.
-3. `03-frontend.md`: frontend monorepo, app surfaces, BFF, feature packages, state, realtime, and testing.
-4. `04-backend.md`: Go services, layered architecture, service responsibilities, workers, and operational behavior.
-5. `05-database.md`: relational model, migrations, Redis, MinIO, OpenSearch, outbox tables, and data risks.
-6. `06-api.md`: HTTP OpenAPI surface, gRPC service surface, BFF routing, and contract risks.
-7. `07-features.md`: user-facing capabilities and how they map to frontend/backend implementation.
-8. `08-authentication.md`: authentication, sessions, cookies, 2FA, OAuth, magic links, CSRF, and auth risks.
-9. `09-realtime.md`: WebSocket gateway, LiveKit, Kafka outbox, Redis room state, events, and risks.
-10. `10-request-flows.md`: end-to-end flows for login, BFF requests, chat, files, meetings, notifications, and search.
-11. `11-technology-stack.md`: languages, frameworks, libraries, infrastructure, tooling, and CI/CD.
-12. `12-project-structure.md`: directory maps for the backend, frontend, contracts, migrations, and deploy files.
-13. `13-code-quality.md`: maintainability, testing posture, coupling, strengths, and quality risks.
-14. `14-technical-debt.md`: prioritized debt list with impact and suggested remediation.
-15. `15-project-manager-guide.md`: non-engineering guide to scope, milestones, risks, and useful questions.
-16. `16-glossary.md`: shared vocabulary used across the codebase and this audit.
+Start here:
 
-## Source Paths Used Heavily
+1. `01-executive-summary.md`
+2. `02-system-architecture.md`
+3. `07-features.md`
+4. `10-request-flows.md`
 
-- `aloqa-backend/AGENTS.md`
-- `aloqa-backend/README.md`
-- `aloqa-backend/go.work`
-- `aloqa-backend/Taskfile.yml`
-- `aloqa-backend/shared/api/api-gateway/v1/api-gateway.openapi.yaml`
-- `aloqa-backend/shared/api/api-gateway/v1/paths/`
-- `aloqa-backend/shared/proto/`
-- `aloqa-backend/platform/migrations/`
-- `aloqa-backend/deploy/compose/core/docker-compose.yml`
-- `aloqa-backend/deploy/prod/docker-compose.yml`
-- `aloqa-backend/deploy/prod/nginx/nginx.conf`
-- `aloqa-frontend/AGENTS.md`
-- `aloqa-frontend/package.json`
-- `aloqa-frontend/apps/web/`
-- `aloqa-frontend/apps/desktop/`
-- `aloqa-frontend/apps/mobile/`
-- `aloqa-frontend/packages/core/`
-- `aloqa-frontend/packages/features/`
-- `aloqa-frontend/docs/adr/`
-- `aloqa-frontend/docs/CICD.md`
-- `aloqa-frontend/docs/infrastructure-architecture.md`
-- `aloqa-frontend/deploy/nginx.prod.conf`
+Then read the deeper chapters:
 
-## Audit Limits
+5. `03-frontend.md`
+6. `04-backend.md`
+7. `05-database.md`
+8. `06-api.md`
+9. `08-authentication.md`
+10. `09-realtime.md`
 
-I inspected source files, configuration, contracts, migrations, deployment files, and package manifests. I did not run the full application stack, run migrations, or execute all test suites. Where runtime-only behavior cannot be proven from the codebase, the relevant document says so explicitly.
+Use these when planning work:
+
+11. `11-technology-stack.md`
+12. `12-project-structure.md`
+13. `13-code-quality.md`
+14. `14-technical-debt.md`
+15. `15-project-manager-guide.md`
+16. `16-glossary.md`
+
+## What this documentation tries to do
+
+It answers these questions:
+
+- What is Aloqa?
+- What does a user do in Aloqa?
+- What happens after the user clicks a button?
+- Which frontend screen is involved?
+- Which backend service is involved?
+- Which database tables are involved?
+- What can break if we change this?
+- How expensive is a change likely to be?
+- Where should an engineer look in the code?
+
+## The two main codebases
+
+Aloqa is stored under:
+
+```text
+/Users/mahmud/Projects/aloqa
+```
+
+Inside that folder there are two main projects:
+
+```text
+aloqa/
+  aloqa-frontend/   -> what users see and click
+  aloqa-backend/    -> what stores data and enforces rules
+  docs/project-audit/ -> these onboarding documents
+```
+
+Think of it like a company office:
+
+```text
+Users enter through the front lobby
+        |
+        v
+Frontend shows screens and buttons
+        |
+        v
+Backend departments do the work
+        |
+        v
+Database warehouse stores records
+```
+
+## Important note about confidence
+
+This documentation is based on source-code inspection. It explains what the code and configuration show.
+
+Some things cannot be proven from code alone, such as:
+
+- which nginx file is really active in production
+- how much traffic production receives
+- whether all migrations ran successfully in production
+- whether every feature is fully tested by QA
+- whether dashboards and alerts exist outside the repo
+
+When something cannot be proven, the documents say so directly.
+
+## What you should remember
+
+- Aloqa has two main codebases: frontend and backend.
+- The frontend is what users see.
+- The backend is where business rules and stored data live.
+- These documents are written in onboarding order, not code order.
+- Start with the big picture before reading technical details.
+- Every chapter ends with a short memory section.
+- File paths are included so engineers can verify claims later.

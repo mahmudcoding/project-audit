@@ -1,218 +1,388 @@
-# System Architecture
+# 02. System Architecture
 
-## Repository Topology
+## What is system architecture?
 
-`/Users/mahmud/Projects/aloqa` is a parent directory containing two primary repositories:
+System architecture is the map of how the whole product is put together.
 
-- `aloqa-backend`: backend services, API contracts, migrations, deploy files, and service infrastructure.
-- `aloqa-frontend`: web, desktop, mobile, shared frontend packages, frontend deployment, and architecture docs.
+It answers:
 
-The parent directory itself is not the main application repository. The child repos are the meaningful source-control units.
+- Where does the user enter?
+- Which app receives the request?
+- Which backend service does the work?
+- Where is data stored?
+- How do live updates reach other users?
 
-Source paths:
+Quick translations before we start:
 
-- `aloqa-backend/go.work`
-- `aloqa-backend/AGENTS.md`
-- `aloqa-frontend/package.json`
-- `aloqa-frontend/AGENTS.md`
+- Redis means fast short-term memory.
+- Kafka means internal event delivery.
+- WebSocket means a live connection that stays open.
+- LiveKit means the audio/video meeting system.
+- BFF means Backend for Frontend, a helper layer used by the web app.
 
-## Runtime Overview
+Real-life analogy:
 
-At runtime, Aloqa is a distributed application:
+Aloqa is like an office building.
 
-```mermaid
-flowchart LR
-  Browser["Web browser"] --> Web["Next.js web app and BFF"]
-  Desktop["Electron desktop"] --> Gateway["API gateway"]
-  Mobile["Expo mobile"] --> Gateway
-  Web --> Gateway
-  Browser --> WS["WebSocket gateway"]
-  Desktop --> WS
-  Mobile --> WS
-  Browser --> LiveKit["LiveKit"]
-  Desktop --> LiveKit
-  Mobile --> LiveKit
-  Gateway --> Auth["auth-service"]
-  Gateway --> Org["org-service"]
-  Gateway --> Messaging["messaging-service"]
-  Gateway --> File["file-service"]
-  Gateway --> Meeting["realtime-service meeting API"]
-  Gateway --> Search["search-service"]
-  Gateway --> Notification["notification-service"]
-  Auth --> Postgres[(Postgres)]
-  Org --> Postgres
-  Messaging --> Postgres
-  File --> Postgres
-  Meeting --> Postgres
-  Notification --> Postgres
-  File --> MinIO[(MinIO)]
-  File --> ClamAV["ClamAV"]
-  Search --> OpenSearch[(OpenSearch)]
-  Messaging --> Kafka[(Kafka)]
-  Meeting --> Kafka
-  Notification --> Kafka
-  Kafka --> WS
-  Kafka --> Search
-  WS --> Redis[(Redis)]
-  Meeting --> Redis
+```text
+Front lobby       -> frontend apps
+Reception desk    -> API gateway
+Departments       -> backend services
+Warehouse         -> database
+Short-term notes  -> Redis
+Mailroom          -> Kafka
+Phone line        -> WebSocket
+Meeting rooms     -> LiveKit
 ```
 
-The backend's service list is defined by the Go workspace and local task runner. Source paths:
+## Why does this architecture exist?
 
-- `aloqa-backend/go.work`
-- `aloqa-backend/Taskfile.yml`
+Aloqa has many jobs to do:
 
-The production compose file includes backend services, infrastructure, frontend, and nginx in one deployment description. Source path: `aloqa-backend/deploy/prod/docker-compose.yml`.
+- show screens
+- protect login sessions
+- store messages
+- check permissions
+- scan files
+- run meetings
+- send notifications
+- search content
+- update users live
 
-The frontend repo also describes production edge behavior and deployment assumptions. Source paths:
+Putting all of that into one large program would be hard to maintain.
 
-- `aloqa-frontend/docs/infrastructure-architecture.md`
-- `aloqa-frontend/deploy/nginx.prod.conf`
+So Aloqa separates work into parts.
 
-## Backend Service Boundaries
+## The simplest picture
 
-The backend workspace contains these modules:
+```text
+User
+  |
+  v
+Frontend app
+  |
+  v
+Gateway
+  |
+  v
+Backend service
+  |
+  v
+Database or infrastructure
+```
 
-- `api-gateway`: HTTP API gateway for browser and app clients.
-- `auth-service`: identity, sessions, verification, OAuth, 2FA, password flows, magic links.
-- `org-service`: companies, workspaces, channels, invites, members, roles, ABAC.
-- `messaging-service`: channel messages, DMs, reactions, pins, read state, threads, blocks.
-- `file-service`: upload, metadata, shares, storage accounting, scanning, processing.
-- `notification-service`: email and web notifications, channel mute state.
-- `realtime-service`: meeting domain, LiveKit integration, meeting state, room settings, breakout rooms.
-- `search-service`: OpenSearch indexing and search.
-- `ws-gateway`: WebSocket subscriptions and fanout for chat, notifications, meetings, and presence.
-- `platform`: shared runtime libraries, migrations, auth utilities, logging, permissions, middleware.
-- `shared`: source contracts for OpenAPI and protobuf.
+Example:
 
-Source path: `aloqa-backend/go.work`.
+```text
+User sends message
+  -> frontend app sends request
+  -> API Gateway receives it
+  -> Messaging Service saves it
+  -> PostgreSQL stores it
+  -> WebSocket Gateway sends live update
+```
 
-## Frontend Boundaries
+## The main parts
 
-The frontend monorepo has three application surfaces:
+### Frontend apps
 
-- `apps/web`: Next.js browser app and BFF route handlers.
-- `apps/desktop`: Electron desktop shell and renderer.
-- `apps/mobile`: Expo/React Native mobile app.
+What this is:
 
-Shared frontend code is split into:
+The frontend is what users see and click.
 
-- `packages/core`: headless domain clients, API routes, realtime, state, auth and shared logic.
-- `packages/features/*`: feature-level headless or transitional feature packages.
-- `packages/ui-kit-*`: platform-specific UI kits.
-- `packages/eslint-config`: shared lint policy.
+Why it exists:
 
-Source paths:
+Users need screens, buttons, forms, menus, call controls, message lists, and file views.
 
-- `aloqa-frontend/apps/`
-- `aloqa-frontend/packages/`
-- `aloqa-frontend/docs/adr/0023-platform-first-architecture.md`
+Where it is used:
 
-## Contract Ownership
+```text
+aloqa-frontend/apps/web/
+aloqa-frontend/apps/desktop/
+aloqa-frontend/apps/mobile/
+```
 
-The backend owns authoritative server contracts:
+User journey:
 
-- HTTP API: `aloqa-backend/shared/api/api-gateway/v1/api-gateway.openapi.yaml`
-- HTTP path fragments: `aloqa-backend/shared/api/api-gateway/v1/paths/`
-- gRPC APIs: `aloqa-backend/shared/proto/`
+```text
+User opens app
+  -> frontend loads screen
+  -> user clicks something
+  -> frontend sends request
+  -> frontend shows result
+```
 
-Generated code is not the source of truth. The backend repository instructions explicitly say not to read or edit generated code under `shared/pkg` and `shared/bin`. Source path: `aloqa-backend/AGENTS.md`.
+### API Gateway
 
-The frontend maintains route helpers and client behavior:
+What this is:
 
-- `aloqa-frontend/packages/core/src/api/routes.ts`
-- `aloqa-frontend/packages/core/src/api/endpoints.ts`
-- `aloqa-frontend/packages/core/src/api/client.ts`
+The API Gateway is the main backend reception desk for normal requests.
 
-This split is sound, but it requires drift checks because the frontend can reference intended routes before backend OpenAPI catches up, and backend routes can change before frontend helpers are updated.
+Why it exists:
 
-## Web BFF Architecture
+The frontend should not need to know every backend department. It sends requests to one main desk. That desk forwards the request to the right service.
 
-The web app is not intended to expose backend bearer tokens directly to browser JavaScript. ADR-0037 defines a BFF session model:
+Example:
 
-- User authenticates through web route handlers.
-- Backend access/refresh tokens are sealed into an HttpOnly app cookie named `aloqa_bff_session`.
-- Browser REST calls hit same-origin `/api/*` route handlers.
-- The BFF forwards requests to the backend gateway with backend auth cookies server-side.
-- The BFF can refresh stale tokens and re-seal the session.
+```text
+Frontend says: "Create channel"
+  -> API Gateway receives it
+  -> API Gateway asks Org Service
+  -> Org Service creates channel
+```
 
-Source paths:
+Where it is used:
 
-- `aloqa-frontend/docs/adr/0037-web-bff-backend-session.md`
-- `aloqa-frontend/apps/web/app/api/[...path]/route.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/sessionCookie.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/sessionRefresh.ts`
+```text
+aloqa-backend/api-gateway/
+```
 
-This design reduces token exposure in the browser. It also makes edge routing critical: browser `/api/*` must reach the Next.js app, not bypass it unintentionally.
+### Backend services
 
-## Realtime Architecture
+What this is:
 
-Realtime is split into two major lanes:
+Backend services are separate departments.
 
-1. WebSocket events through `ws-gateway`.
-2. Audio/video media through LiveKit.
+Why Aloqa needs them:
 
-Chat and meeting state changes are persisted first, then propagated asynchronously through outbox tables and Kafka. The WebSocket gateway consumes Kafka events and fans out to subscribed clients. Redis holds presence, room state, typing state, notification pub/sub, and rate-limit-style ephemeral state.
+Each department owns one major job.
 
-Source paths:
+```text
+Auth Service          -> login and sessions
+Org Service           -> companies, workspaces, channels, roles
+Messaging Service     -> chat and direct messages
+File Service          -> upload, storage, shares
+Realtime Service      -> meeting logic
+Notification Service  -> email and in-app notifications
+Search Service        -> search
+WebSocket Gateway     -> live updates
+```
 
-- `aloqa-backend/messaging-service/`
-- `aloqa-backend/realtime-service/`
-- `aloqa-backend/ws-gateway/`
-- `aloqa-backend/platform/migrations/`
-- `aloqa-frontend/packages/core/src/realtime/client.ts`
-- `aloqa-frontend/packages/core/src/realtime/events.ts`
-- `aloqa-frontend/docs/adr/0022-livekit-client-sdk.md`
+Where they are used:
 
-## Data Architecture
+```text
+aloqa-backend/auth-service/
+aloqa-backend/org-service/
+aloqa-backend/messaging-service/
+aloqa-backend/file-service/
+aloqa-backend/realtime-service/
+aloqa-backend/notification-service/
+aloqa-backend/search-service/
+aloqa-backend/ws-gateway/
+```
 
-PostgreSQL is the system of record. Redis is used for cache, session/presence-like fast state, room state, pub/sub, and realtime coordination. MinIO stores files. OpenSearch indexes searchable content. Kafka moves durable events between services.
+### Database
 
-The database schema is controlled by migrations under `aloqa-backend/platform/migrations/`. The schema is broad and includes:
+What this is:
 
-- identity and sessions
-- companies, workspaces, channels, memberships
-- custom roles and role permissions
-- direct messages and user blocks
-- messages, reactions, pins, threads, read cursors
-- files, shares, quotas, thumbnails, processing state
-- notifications and mutes
-- meetings, admins, participants, room settings, device requests
-- meeting chat and reactions
-- breakout rooms and waiting rooms
-- outbox tables for messaging, channels, and meetings
+The database is the long-term warehouse.
 
-## Deployment Architecture
+Why it exists:
 
-The backend repo has local and production compose definitions:
+Messages, users, workspaces, files, roles, meetings, and sessions must survive after a server restarts.
 
-- Local/core: `aloqa-backend/deploy/compose/core/docker-compose.yml`
-- Production: `aloqa-backend/deploy/prod/docker-compose.yml`
-- Backend nginx: `aloqa-backend/deploy/prod/nginx/nginx.conf`
+Where it is used:
 
-The frontend repo has its own production nginx and CI/CD docs:
+```text
+aloqa-backend/platform/migrations/
+```
 
-- `aloqa-frontend/deploy/nginx.prod.conf`
-- `aloqa-frontend/docs/CICD.md`
-- `aloqa-frontend/docs/infrastructure-architecture.md`
-- `aloqa-frontend/deploy/smoke-live.sh`
+### Redis
 
-There is a deployment ambiguity. The backend nginx routes `/api/v1/` to `api-gateway`; the frontend nginx routes `/api/*` to the web app/BFF. I cannot determine from the codebase which file is the active edge in production.
+What this is:
 
-## System-Level Architectural Assessment
+Redis is fast short-term memory.
 
-The architecture is coherent for a collaboration product:
+Why it exists:
 
-- Go services own durable business logic and infrastructure.
-- TypeScript clients own platform UX and BFF browser security.
-- Kafka/outbox handles asynchronous fanout.
-- LiveKit handles media instead of custom WebRTC.
-- OpenAPI/protobuf contracts provide integration boundaries.
+Some data changes quickly and does not need to live forever in the same way as database records.
 
-The main architectural weakness is not the component choice; it is coordination risk across component boundaries. The codebase should prioritize:
+Examples:
 
-- one authoritative production edge model
-- automated contract drift checks
-- backend integration tests around service boundaries
-- versioned realtime event contracts
-- migration safety and operational observability
+- who is online
+- room state during a meeting
+- typing state
+- short-lived notification delivery
+
+Where it is used:
+
+```text
+aloqa-backend/realtime-service/internal/infrastructure/redis/
+aloqa-backend/ws-gateway/
+```
+
+### Kafka
+
+What this is:
+
+Kafka is an internal delivery service.
+
+Analogy:
+
+Imagine a company mailroom. One department drops a note into the mailroom. Another department picks it up later.
+
+Why it exists:
+
+When a message is saved, other systems need to know:
+
+- WebSocket should notify users
+- Search may need to index it
+- Notifications may need to alert someone
+
+Kafka helps those systems hear about the change.
+
+Where it is used:
+
+```text
+aloqa-backend/messaging-service/
+aloqa-backend/realtime-service/
+aloqa-backend/search-service/
+aloqa-backend/ws-gateway/
+```
+
+### WebSocket Gateway
+
+What this is:
+
+WebSocket is a connection that stays open.
+
+Analogy:
+
+Normal HTTP is like sending a letter and waiting for a reply. WebSocket is like keeping a phone call open.
+
+Why Aloqa needs it:
+
+Users expect messages, notifications, typing, and meeting updates to appear live.
+
+Where it is used:
+
+```text
+aloqa-backend/ws-gateway/
+aloqa-frontend/packages/core/src/realtime/
+```
+
+### LiveKit
+
+What this is:
+
+LiveKit is the video and audio meeting system.
+
+Why Aloqa needs it:
+
+Building video/audio infrastructure from scratch is difficult. LiveKit handles the media part while Aloqa handles product rules like who can join, who is admin, and who is in the waiting room.
+
+Where it is used:
+
+```text
+aloqa-backend/realtime-service/
+aloqa-frontend/docs/adr/0022-livekit-client-sdk.md
+```
+
+## A full example: sending a message
+
+```text
+1. User types "Hello" in a channel.
+2. Frontend sends the message.
+3. API Gateway receives the request.
+4. Messaging Service checks and saves the message.
+5. PostgreSQL stores the message.
+6. Messaging Service creates a delivery note.
+7. Kafka carries the note.
+8. WebSocket Gateway receives the note.
+9. Other users see "Hello" appear live.
+```
+
+Diagram:
+
+```text
+User
+  -> Frontend
+  -> API Gateway
+  -> Messaging Service
+  -> PostgreSQL
+  -> Kafka
+  -> WebSocket Gateway
+  -> Other users
+```
+
+## A full example: joining a meeting
+
+```text
+1. User clicks Join Meeting.
+2. Frontend asks backend to join.
+3. API Gateway forwards to Realtime Service.
+4. Realtime Service checks meeting rules.
+5. Database stores participant state.
+6. Redis stores short-term room state.
+7. LiveKit handles audio/video connection.
+8. WebSocket Gateway sends room updates.
+```
+
+Diagram:
+
+```text
+User
+  -> Frontend
+  -> API Gateway
+  -> Realtime Service
+  -> Database and Redis
+  -> LiveKit
+  -> WebSocket Gateway
+```
+
+## Important implementation files
+
+Do not start here when learning the project. Use these only after you understand the story above.
+
+Backend:
+
+```text
+aloqa-backend/go.work
+aloqa-backend/Taskfile.yml
+aloqa-backend/shared/api/api-gateway/v1/api-gateway.openapi.yaml
+aloqa-backend/shared/proto/
+aloqa-backend/platform/migrations/
+aloqa-backend/deploy/prod/docker-compose.yml
+```
+
+Frontend:
+
+```text
+aloqa-frontend/apps/
+aloqa-frontend/packages/core/
+aloqa-frontend/docs/adr/
+aloqa-frontend/deploy/nginx.prod.conf
+```
+
+## Important risk: two deployment stories
+
+The frontend deployment file says browser API traffic should go to the web BFF:
+
+```text
+aloqa-frontend/deploy/nginx.prod.conf
+```
+
+The backend deployment file sends `/api/v1/` traffic directly to the API Gateway:
+
+```text
+aloqa-backend/deploy/prod/nginx/nginx.conf
+```
+
+Why you should care:
+
+If production uses the wrong path, the login/security design can behave differently from what the frontend expects.
+
+I cannot determine from the codebase which routing file is active in production today.
+
+## What you should remember
+
+- Architecture is the map of how requests move through Aloqa.
+- Frontend apps are the user's screens.
+- API Gateway is the backend reception desk.
+- Backend services are separate departments.
+- PostgreSQL is the long-term warehouse.
+- Redis is short-term memory.
+- Kafka is the internal mailroom.
+- WebSocket is a phone call that stays connected.
+- LiveKit handles audio and video calls.
+- The biggest architecture risk is unclear production routing.

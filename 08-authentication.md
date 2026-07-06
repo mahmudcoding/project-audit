@@ -1,239 +1,344 @@
-# Authentication and Authorization Audit
+# 08. Authentication and Authorization
 
-## Authentication Summary
+## What is authentication?
 
-Aloqa authentication spans backend services, the API gateway, the web BFF, and platform clients.
+Authentication means proving who the user is.
 
-Backend auth source paths:
+Plain English:
 
-- `aloqa-backend/auth-service/`
-- `aloqa-backend/shared/proto/auth/`
-- `aloqa-backend/platform/pkg/utils/auth.go`
-- `aloqa-backend/platform/migrations/`
-- `aloqa-backend/shared/api/api-gateway/v1/paths/`
+It answers:
 
-Frontend auth source paths:
+```text
+Are you really this user?
+```
 
-- `aloqa-frontend/apps/web/src/lib/auth/sessionCookie.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/sessionRefresh.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/withCsrf.ts`
-- `aloqa-frontend/apps/web/app/api/[...path]/route.ts`
-- `aloqa-frontend/apps/web/app/api/auth/refresh/route.ts`
-- `aloqa-frontend/apps/web/app/api/realtime/ws-ticket/route.ts`
+Real-life analogy:
 
-## Backend Auth Capabilities
+Authentication is showing your ID at the building entrance.
 
-Backend auth supports:
+## What is authorization?
 
-- user registration
-- login
-- refresh token
-- logout current session
-- logout all sessions
-- session listing
-- email verification
-- resend verification code
-- forgot password
-- reset password
-- Google login
-- password change
-- 2FA enable and confirmation
-- 2FA disable and confirmation
-- 2FA login verification and resend
-- magic link request and verification
-- settings and profile updates
-- privacy updates
-- avatar update
+Authorization means deciding what the user is allowed to do.
 
-Source paths:
+Plain English:
 
-- `aloqa-backend/shared/proto/auth/`
-- `aloqa-backend/shared/api/api-gateway/v1/paths/security/`
-- `aloqa-backend/auth-service/`
+It answers:
 
-## Token and Session Model
+```text
+Now that we know who you are, what doors can you open?
+```
 
-The backend uses JWT helpers in the platform module and stores session state in Postgres and Redis-adjacent infrastructure. Source paths:
+Real-life analogy:
 
-- `aloqa-backend/platform/pkg/utils/auth.go`
-- `aloqa-backend/auth-service/`
-- `aloqa-backend/platform/migrations/20260504074928_init.*`
+Authorization is the access badge that lets you enter some rooms but not others.
 
-The API gateway sets access and refresh cookies for some auth flows. Source path: `aloqa-backend/api-gateway/`.
+## Why Aloqa needs both
 
-The web BFF seals backend token material into an app-owned HttpOnly cookie named `aloqa_bff_session`. Source path: `aloqa-frontend/apps/web/src/lib/auth/sessionCookie.ts`.
+Example:
 
-This creates two related but different session layers:
+```text
+Alice logs in
+  -> authentication proves she is Alice
 
-- backend session: the canonical server-side auth state
-- web BFF session: sealed frontend-server cookie containing backend token material for browser requests
+Alice tries to delete a channel
+  -> authorization checks whether Alice may delete that channel
+```
 
-## Web BFF Security Model
+Both are required.
 
-For web, browser JavaScript should not manage backend refresh tokens directly. Instead:
+If authentication fails, the user should not enter.
 
-1. Browser authenticates through web routes.
-2. The web server stores backend token material in a sealed HttpOnly cookie.
-3. Browser calls same-origin `/api/*`.
-4. The BFF forwards to the backend gateway with backend cookies server-side.
-5. If the access token is stale and the request is replayable, the BFF refreshes and retries.
+If authorization fails, the user may enter Aloqa but cannot perform that action.
 
-Source paths:
+## Login journey
 
-- `aloqa-frontend/docs/adr/0037-web-bff-backend-session.md`
-- `aloqa-frontend/apps/web/app/api/[...path]/route.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/sessionCookie.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/sessionRefresh.ts`
+```text
+1. User opens Aloqa.
+2. User clicks Login.
+3. User enters email and password.
+4. Frontend sends login request.
+5. Backend checks the user record.
+6. Backend checks password.
+7. Backend creates session.
+8. Frontend stores login state safely.
+9. User sees workspace.
+```
 
-This is a sound browser security model if routing is correct.
+Diagram:
 
-## CSRF
+```text
+User
+  -> Frontend
+  -> BFF for web users
+  -> API Gateway
+  -> Auth Service
+  -> Database
+  -> response returns
+```
 
-The web BFF uses CSRF checks for mutating methods. Source path: `aloqa-frontend/apps/web/src/lib/auth/withCsrf.ts`.
+## What is a session?
 
-This is necessary because the web model relies on cookies. Same-origin and CSRF behavior must be tested behind the actual production edge.
+A session means "this user is currently logged in."
 
-## Refresh Behavior
+Analogy:
 
-The BFF has server-side refresh behavior:
+A session is a visitor pass.
 
-- transparent refresh for replayable API requests
-- separate upload route because streaming uploads cannot safely be replayed
-- explicit refresh route
-- single-flight refresh logic keyed by session ID inside the process
+When you enter a building, reception gives you a pass. You use it until you leave or it expires.
 
-Source paths:
+Why Aloqa needs it:
 
-- `aloqa-frontend/apps/web/app/api/[...path]/route.ts`
-- `aloqa-frontend/apps/web/app/api/upload/[...path]/route.ts`
-- `aloqa-frontend/apps/web/app/api/auth/refresh/route.ts`
-- `aloqa-frontend/apps/web/src/lib/auth/sessionRefresh.ts`
+Users should not type their password on every click.
 
-Risk: single-flight behavior is in-process. If production runs multiple web replicas, duplicate refresh races can still happen unless the backend refresh design tolerates them or a distributed lock/session design is added.
+Where sessions are used:
 
-## WebSocket Auth
+```text
+aloqa-backend/auth-service/
+aloqa-backend/platform/migrations/20260504074928_init.*
+```
 
-The web app has a WebSocket ticket route. Source path: `aloqa-frontend/apps/web/app/api/realtime/ws-ticket/route.ts`.
+## What is a token?
 
-The route:
+A token is a signed proof that a user is logged in.
 
-- requires a valid sealed session
-- proactively refreshes when the access token is close to expiry
-- returns a token for direct WebSocket connection
+Plain English:
 
-The WebSocket gateway authenticates clients and manages connection subscriptions. Source paths:
+It is a digital pass that backend services can check.
 
-- `aloqa-backend/ws-gateway/`
-- `aloqa-backend/ws-gateway/internal/ws/client.go`
-- `aloqa-backend/ws-gateway/internal/ws/messages.go`
+Why Aloqa needs it:
 
-## Authorization Model
+Each request must prove who is making it.
 
-Authorization is broader than login. Aloqa has organization-level and workspace/channel-level permissions:
+Important file:
 
-- company roles
-- workspace roles or memberships
-- channel membership
-- custom roles
-- role permissions
-- user roles
-- ABAC checks
+```text
+aloqa-backend/platform/pkg/utils/auth.go
+```
 
-Backend source paths:
+## Web login and the BFF
 
-- `aloqa-backend/org-service/internal/core/abac/`
-- `aloqa-backend/platform/pkg/permissions/`
-- `aloqa-backend/platform/migrations/20260520061940_add_abac_roles.*`
-- `aloqa-backend/platform/migrations/20260604000001_custom_roles_v2.*`
+The web app uses a BFF.
 
-Authorization risk is high because chat, files, meeting access, invites, roles, and storage administration all depend on correct permission checks.
+BFF means "Backend for Frontend."
 
-## File Authorization
+Analogy:
 
-File access combines:
+The BFF is a receptionist sitting between the browser and backend.
 
-- file ownership
-- workspace/company context
-- file shares
-- message or meeting attachments
-- signed URL/content access behavior
-- delete/revoke behavior
-- storage quotas
+```text
+Browser
+  -> BFF receptionist
+  -> backend auth service
+```
 
-Source paths:
+Why Aloqa needs it:
 
-- `aloqa-backend/file-service/`
-- `aloqa-backend/platform/migrations/20260608000003_files.*`
-- `aloqa-backend/platform/migrations/20260609000002_file_shares.*`
+Sensitive login information should not be handled directly by browser code when it can be kept safer on the server side.
 
-This area should be explicitly tested for privilege escalation.
+What happens:
 
-## Meeting Authorization
+```text
+Backend returns login tokens
+  -> BFF seals them into a safe cookie
+  -> browser keeps the cookie
+  -> future requests go through BFF
+```
 
-Meeting authorization includes:
+Where it is used:
 
-- meeting creator/owner
-- channel/workspace access
-- meeting admins
-- admin permissions
-- room settings
-- participant permissions
-- device permission requests
-- waiting room admission
-- moderation: mute, kick, ban
-- breakout-room visibility and invites
+```text
+aloqa-frontend/apps/web/src/lib/auth/sessionCookie.ts
+aloqa-frontend/apps/web/src/lib/auth/sessionRefresh.ts
+aloqa-frontend/apps/web/app/api/[...path]/route.ts
+```
 
-Source paths:
+## What is a sealed cookie?
 
-- `aloqa-backend/realtime-service/`
-- `aloqa-backend/shared/proto/meeting/`
-- `aloqa-backend/platform/migrations/20260622072718_meeting_admins.*`
-- `aloqa-backend/platform/migrations/20260622072719_meeting_admin_permissions.*`
-- `aloqa-backend/platform/migrations/20260622074215_meeting_participant_permissions.*`
+A cookie is a small piece of data stored by the browser.
 
-Meeting auth is more complex than normal chat auth and should have dedicated tests.
+A sealed cookie is protected so the browser cannot casually read or change the sensitive contents.
 
-## Auth Risks
+Analogy:
 
-### Edge Routing Can Bypass BFF Assumptions
+It is like a locked envelope. The browser carries it, but the server is the one that can safely open it.
 
-If browser `/api/v1/*` goes directly to `api-gateway`, the web BFF protections and sealed session model may be bypassed. Source paths:
+Why Aloqa needs it:
 
-- `aloqa-frontend/deploy/nginx.prod.conf`
-- `aloqa-backend/deploy/prod/nginx/nginx.conf`
+The web app needs a safer way to remember backend login information.
 
-This is the highest auth architecture risk.
+## What is CSRF protection?
 
-### Distributed Refresh
+CSRF means a bad website tries to trick a logged-in browser into making a request.
 
-BFF refresh single-flight appears process-local. If web scales horizontally, refresh race behavior must be validated.
+Plain English:
 
-### Test Coverage
+Imagine someone tricks your browser into clicking a dangerous button without you seeing it.
 
-The backend has limited test coverage according to its own instructions. Auth and authorization need integration tests, not just unit tests.
+Why Aloqa needs protection:
 
-### Cookie Details
+The web app uses cookies, and cookies are sent automatically by browsers. Mutating requests need extra checks.
 
-The exact production behavior depends on domains, TLS, SameSite, Secure flags, reverse proxy headers, and edge routing. I cannot determine the live cookie behavior from the repo alone.
+Where it is used:
 
-## Recommended Auth Tests
+```text
+aloqa-frontend/apps/web/src/lib/auth/withCsrf.ts
+```
 
-Add tests for:
+## Password reset journey
 
-- register -> verify email -> login
-- login -> refresh -> retry request
-- logout current session
-- logout all sessions
-- password change invalidates old credentials as expected
-- forgot/reset password token expiry
-- 2FA enable/disable/login
-- magic link replay prevention
-- web BFF CSRF rejection for mutating requests
-- web BFF refresh under concurrent requests
-- file access across workspace boundaries
-- meeting admin and participant permission edge cases
-- WebSocket connect with expired, invalid, and refreshed tokens
+```text
+User clicks Forgot password
+  -> enters email
+  -> backend creates reset flow
+  -> Notification Service sends email
+  -> user clicks reset link
+  -> backend verifies link
+  -> user sets new password
+```
 
-## Auth Assessment
+Affected services:
 
-The auth design has the right pieces: sessions, JWT, HttpOnly web session sealing, CSRF, 2FA, OAuth, magic links, and ABAC. The risk is integration correctness across gateway, BFF, cookies, permissions, and WebSocket authentication.
+```text
+auth-service
+notification-service
+api-gateway
+```
+
+## 2FA journey
+
+2FA means two-factor authentication.
+
+Plain English:
+
+The user needs password plus a second proof, usually a code.
+
+Why Aloqa needs it:
+
+It protects accounts even if a password is stolen.
+
+Journey:
+
+```text
+User enables 2FA
+  -> backend sends code
+  -> user confirms code
+  -> 2FA becomes active
+
+Later login
+  -> user enters password
+  -> backend asks for 2FA code
+  -> user enters code
+  -> login completes
+```
+
+Affected files:
+
+```text
+aloqa-backend/shared/api/api-gateway/v1/paths/security/
+aloqa-backend/auth-service/
+```
+
+## Google login and magic links
+
+Google login:
+
+The user proves identity through Google.
+
+Magic link:
+
+The user receives a special login link by email.
+
+Why they exist:
+
+They reduce password friction and support modern login flows.
+
+Affected services:
+
+```text
+auth-service
+notification-service
+api-gateway
+```
+
+## Authorization and permissions
+
+After login, Aloqa checks what the user can do.
+
+Example:
+
+```text
+User tries to invite member
+  -> backend checks company/workspace role
+  -> if allowed, invite is created
+  -> if not allowed, request is rejected
+```
+
+Important term: ABAC.
+
+ABAC means attribute-based access control.
+
+Plain English:
+
+The backend decides permission by looking at facts:
+
+- who is the user?
+- what company are they in?
+- what workspace is this?
+- what role do they have?
+- what action are they trying to perform?
+
+Where it is used:
+
+```text
+aloqa-backend/org-service/internal/core/abac/
+aloqa-backend/platform/pkg/permissions/
+```
+
+## Features affected by auth and permissions
+
+| Feature | Why auth matters |
+|---|---|
+| Messaging | Users should only see channels they can access |
+| Files | Users should only open files they are allowed to see |
+| Meetings | Users need join, admin, mute, kick, ban rules |
+| Admin | Only allowed users should manage members and roles |
+| Search | Search should not reveal private content |
+
+## Important files
+
+```text
+aloqa-backend/auth-service/
+aloqa-backend/shared/proto/auth/
+aloqa-backend/platform/pkg/utils/auth.go
+aloqa-backend/org-service/internal/core/abac/
+aloqa-backend/platform/pkg/permissions/
+aloqa-frontend/apps/web/src/lib/auth/sessionCookie.ts
+aloqa-frontend/apps/web/src/lib/auth/sessionRefresh.ts
+aloqa-frontend/apps/web/src/lib/auth/withCsrf.ts
+```
+
+## What can break if auth changes?
+
+- users cannot log in
+- users stay logged in too long
+- users are logged out too often
+- 2FA blocks valid users
+- password reset links fail
+- frontend and backend disagree about session state
+- unauthorized users gain access
+- authorized users are denied
+
+## Unknowns from code alone
+
+I cannot determine live production cookie behavior from the repo alone because it depends on domains, TLS, proxy headers, and the active edge routing.
+
+## What you should remember
+
+- Authentication proves who the user is.
+- Authorization decides what the user can do.
+- A session is like a visitor pass.
+- A token is digital proof used by requests.
+- The web BFF protects browser login handling.
+- CSRF protection helps stop browser trick attacks.
+- ABAC means permission decisions use facts about user, action, and resource.
+- Auth changes are high risk because every platform depends on them.
